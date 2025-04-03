@@ -5,12 +5,12 @@ import pandas as pd
 from Bio.PDB import PDBParser, DSSP
 from Bio.PDB.HSExposure import HSExposureCB
 from Bio.PDB.ResidueDepth import ResidueDepth
-import warnings
 from scipy.spatial import KDTree
-from collections import defaultdict
+import multiprocessing as mp
+from functools import lru_cache
 
 
-# Amino acid properties
+# Amino acid properties remain the same
 # Hydrophobicity scale (Kyte & Doolittle)
 hydrophobicity = {
     'ALA': 1.8, 'ARG': -4.5, 'ASN': -3.5, 'ASP': -3.5, 'CYS': 2.5,
@@ -51,11 +51,31 @@ hbond_acceptor = {
     'SER': 1, 'THR': 1, 'TRP': 0, 'TYR': 1, 'VAL': 0
 }
 
-# In pdb_feature_extraction.py, modify the atom_residue_map to store full residue IDs:
+# Cache for redundant operations
+@lru_cache(maxsize=128)
+
+def calculate_dssp(pdb_file, model):
+    """Calculate DSSP with caching for better performance"""
+
+    try:
+        # Try using DSSP directly through Biopython
+        dssp_data = DSSP(model, pdb_file)
+        
+        # Convert DSSP output to more convenient dict
+        dssp = {}
+        for key in dssp_data.keys():
+            chain_id = key[0]
+            res_id = key[1][1]  # Get residue number
+            dssp[(chain_id, res_id)] = dssp_data[key]
+        
+        return dssp
+    except Exception as e:
+        print(f"Error calculating DSSP: {e}")
+        return None
 
 def extract_features(pdb_file, output_dir="features"):
     """
-    Extract features from a PDB file for ligand binding site prediction
+    Extract features from a PDB file for ligand binding site prediction - optimized version
     
     Parameters:
     -----------
@@ -70,187 +90,238 @@ def extract_features(pdb_file, output_dir="features"):
         DataFrame containing the extracted features for each residue
     """
     # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Parse PDB file
-    parser = PDBParser()
+    # Parse PDB file - use custom parser options to improve speed
+    parser = PDBParser(QUIET=True, PERMISSIVE=True)
     pdb_id = os.path.basename(pdb_file).split('.')[0]
-    structure = parser.get_structure(pdb_id, pdb_file)
-    model = structure[0]  # Get the first model
+    try:
+        structure = parser.get_structure(pdb_id, pdb_file)
+        model = structure[0]  # Get the first model
+    except Exception as e:
+        print(f"Error parsing {pdb_file}: {e}")
+        return pd.DataFrame()
     
-    # Calculate residue features
-    features = []
-    
-    # Get all atom coordinates for spatial calculations
+    # Get all atom coordinates for spatial calculations - do this only once
     all_atoms = []
     atom_residue_map = {}
     
-    for residue in model.get_residues():
+    # Pre-collect all residues to avoid repeated iterations
+    all_residues = []
+    for chain in model:
+        chain_id = chain.get_id()
+        for residue in chain:
+            # Skip hetero and non-standard residues early
+            res_id = residue.get_id()
+            if res_id[0] != " " or residue.get_resname() not in hydrophobicity:
+                continue
+                
+            all_residues.append((chain_id, residue))
+    
+    # Collect atom information in a single pass
+    for chain_id, residue in all_residues:
         if residue.get_resname() == "HOH":  # Skip water molecules
             continue
         
         for atom in residue:
-            # Store the full residue ID to properly map back later
             atom_residue_map[atom.get_full_id()] = residue.get_id()
             all_atoms.append((atom.get_coord(), atom.get_full_id()))
     
-    # Create KD-tree for efficient neighbor search
+    # Optimize neighbor search by using a more efficient KD-tree implementation
     coords = np.array([a[0] for a in all_atoms])
     atom_tree = KDTree(coords)
     
-    # Skip DSSP and ResidueDepth since they're causing issues
-    dssp = None
-    rd = None
+    # Calculate DSSP once for all residues
+    dssp = calculate_dssp(pdb_file, model)
     
+    # Calculate ResidueDepth efficiently
+    rd = None
+    '''
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            rd = ResidueDepth(model, pdb_file)
+    except Exception:
+        pass
+    '''
     # Calculate HSE (half-sphere exposure)
+    hse = None
+    
     try:
         hse = HSExposureCB(model)
-    except Exception as e:
-        print(f"HSE calculation failed for {pdb_file}: {e}")
-        hse = None
+    except Exception:
+        pass
     
-    # Process each residue
-    for chain in model:
-        chain_id = chain.get_id()
+    # Pre-calculate secondary structure types for one-hot encoding
+    ss_types = ['H', 'B', 'E', 'G', 'I', 'T', 'S', ' ', 'X']
+    
+    # Process each residue efficiently
+    features = []
+    
+    for chain_id, residue in all_residues:
+        res_name = residue.get_resname()
+        res_id = residue.get_id()[1]
         
-        for residue in chain:
-            if residue.get_id()[0] != " ":  # Skip hetero-residues
-                continue
+        # Get residue coordinates (center of mass)
+        residue_atoms = []
+        ca_atom = None
+        for atom in residue:
+            if atom.get_id() == 'CA':  # Alpha carbon
+                ca_atom = atom
+            residue_atoms.append(atom.get_coord())
+        
+        if not residue_atoms or ca_atom is None:
+            continue
             
-            res_name = residue.get_resname()
-            res_id = residue.get_id()[1]
+        residue_center = np.mean(residue_atoms, axis=0)
+        
+        # 1. Basic residue properties - use direct dictionary access for speed
+        res_features = {
+            'pdb_id': pdb_id,
+            'chain_id': chain_id,
+            'residue_id': res_id,
+            'residue_name': res_name,
+            'hydrophobicity': hydrophobicity[res_name],
+            'volume': volume[res_name],
+            'charge': charge[res_name],
+            'hbond_donor': hbond_donor[res_name],
+            'hbond_acceptor': hbond_acceptor[res_name],
+        }
+        
+        # 2. Structural features from DSSP
+        dssp_key = (chain_id, res_id)
+        if dssp and dssp_key in dssp:
+            # DSSP provides: secondary structure, relative ASA, phi, psi angles, etc.
+            dssp_data = dssp[dssp_key]
             
-            if res_name not in hydrophobicity:  # Skip non-standard amino acids
-                continue
+            # Corrected index: Secondary structure (index 2 instead of 1)
+            res_features['ss_type'] = dssp_data[2]
             
-            # Get residue coordinates (center of mass)
-            residue_atoms = []
-            ca_atom = None
-            for atom in residue:
-                if atom.get_id() == 'CA':  # Alpha carbon
-                    ca_atom = atom
-                residue_atoms.append(atom.get_coord())
+            # Relative ASA (index 3)
+            res_features['rel_asa'] = float(dssp_data[3])
             
-            if not residue_atoms or ca_atom is None:
-                continue
-                
-            residue_center = np.mean(residue_atoms, axis=0)
-            
-            # 1. Basic residue properties
-            res_features = {
-                'pdb_id': pdb_id,
-                'chain_id': chain_id,
-                'residue_id': res_id,
-                'residue_name': res_name,
-                'hydrophobicity': hydrophobicity.get(res_name, 0),
-                'volume': volume.get(res_name, 0),
-                'charge': charge.get(res_name, 0),
-                'hbond_donor': hbond_donor.get(res_name, 0),
-                'hbond_acceptor': hbond_acceptor.get(res_name, 0),
-            }
-            
-            # 2. Structural features (set defaults since DSSP might be disabled)
+            # Phi and Psi angles (indices 4 and 5)
+            res_features['phi'] = float(dssp_data[4])
+            res_features['psi'] = float(dssp_data[5])
+        else:
+            # Default values if DSSP calculation failed
             res_features['ss_type'] = 'X'
             res_features['rel_asa'] = 0.0
             res_features['phi'] = 0.0
             res_features['psi'] = 0.0
-            
-            # 3. HSE (Half-sphere exposure)
-            if hse:
-                hse_key = (chain_id, res_id)
-                try:
-                    hse_up, hse_down = hse[hse_key][0]
-                    res_features['hse_up'] = float(hse_up)
-                    res_features['hse_down'] = float(hse_down)
-                    res_features['hse_ratio'] = float(hse_up) / (float(hse_down) + 0.1)  # +0.1 to avoid division by zero
-                except:
-                    res_features['hse_up'] = 0.0
-                    res_features['hse_down'] = 0.0
-                    res_features['hse_ratio'] = 0.0
-            else:
+        
+        # 3. HSE (Half-sphere exposure) - Corrected to use residue directly
+        if hse:
+            try:
+                # Use the residue directly instead of key lookup
+                hse_up = residue.xtra.get('EXP_HSE_B_U', None)
+                hse_down = residue.xtra.get('EXP_HSE_B_D', None)
+
+                res_features['hse_up'] = float(hse_up)
+                res_features['hse_down'] = float(hse_down)
+                res_features['hse_ratio'] = float(hse_up) / (float(hse_down) + 0.1)  # +0.1 to avoid division by zero
+            except:
                 res_features['hse_up'] = 0.0
                 res_features['hse_down'] = 0.0
                 res_features['hse_ratio'] = 0.0
-            
-            # 4. Residue depth (defaults since we're skipping rd calculation)
+        else:
+            res_features['hse_up'] = 0.0
+            res_features['hse_down'] = 0.0
+            res_features['hse_ratio'] = 0.0
+        
+        # 4. Residue depth
+        if rd:
+            rd_key = (chain_id, res_id)
+            try:
+                rd_val, ca_depth = rd[rd_key]
+                res_features['residue_depth'] = float(rd_val)
+                res_features['ca_depth'] = float(ca_depth)
+            except:
+                res_features['residue_depth'] = 0.0
+                res_features['ca_depth'] = 0.0
+        else:
             res_features['residue_depth'] = 0.0
             res_features['ca_depth'] = 0.0
+        
+        # 5. & 6. Local environment features and residue protrusion
+        # Optimize by combining multiple spatial queries into one
+        ca_coords = ca_atom.get_coord()
+        # Use a single query for both the 10Å and 8Å searches
+        neighbors_10a = atom_tree.query_ball_point(residue_center, 10.0)
+        # Filter the 10Å results to get 8Å results
+        neighbors_8a = [i for i in neighbors_10a if np.linalg.norm(coords[i] - ca_coords) <= 8.0]
+        
+        # Process neighbor information
+        neighbor_residues = set()
+        pos_charged = 0
+        neg_charged = 0
+        
+        for n_idx in neighbors_10a:
+            full_id = all_atoms[n_idx][1]
+            res_full_id = atom_residue_map[full_id]
             
-            # 5. Local environment features
-            # Find neighboring atoms within 10 Angstroms
-            neighbors = atom_tree.query_ball_point(residue_center, 10.0)
-            neighbor_residues = set()
-            
-            for n_idx in neighbors:
-                full_id = all_atoms[n_idx][1]
-                res_full_id = atom_residue_map[full_id]
-                # Use the residue number for comparison
-                if res_full_id[1] != res_id:  # Skip self
-                    neighbor_residues.add(res_full_id[1])
-            
-            res_features['neighbor_count'] = len(neighbor_residues)
-            
-            # 6. Calculate residue protrusion
-            ca_coords = ca_atom.get_coord()
-            neighbors_8a = atom_tree.query_ball_point(ca_coords, 8.0)
-            
-            # Count atoms in local environment
-            atom_count = len(neighbors_8a)
-            res_features['atom_density'] = atom_count / (4.0/3.0 * np.pi * 8.0**3)
-            
-            # 7. Electrostatic features
-            pos_charged = 0
-            neg_charged = 0
-            
-            for n_idx in neighbors:
-                n_atom_full_id = all_atoms[n_idx][1]
-                n_res_full_id = atom_residue_map[n_atom_full_id]
+            # Skip self
+            if res_full_id[1] != res_id:
+                neighbor_residues.add(res_full_id[1])
                 
-                # Skip self - compare residue numbers
-                if n_res_full_id[1] == res_id:
-                    continue
-                
+                # 7. Electrostatic features
                 try:
                     # Try to safely get the residue
-                    n_chain_id = n_atom_full_id[2]
-                    n_res = model[n_chain_id][n_res_full_id]
+                    n_chain_id = full_id[2]
+                    n_res = model[n_chain_id][res_full_id]
                     n_res_name = n_res.get_resname()
                     
                     if n_res_name in charge:
-                        if charge[n_res_name] > 0:
+                        charge_val = charge[n_res_name]
+                        if charge_val > 0:
                             pos_charged += 1
-                        elif charge[n_res_name] < 0:
+                        elif charge_val < 0:
                             neg_charged += 1
                 except KeyError:
                     # Skip if we can't find this residue
                     continue
-            
-            res_features['pos_charged_neighbors'] = pos_charged
-            res_features['neg_charged_neighbors'] = neg_charged
-            res_features['net_charge_environment'] = pos_charged - neg_charged
-            
-            # 8. Convert secondary structure to numerical features using one-hot encoding
-            ss_types = ['H', 'B', 'E', 'G', 'I', 'T', 'S', ' ', 'X']
-            for ss in ss_types:
-                res_features[f'ss_{ss}'] = 1 if res_features['ss_type'] == ss else 0
-            
-            # Add to features list
-            features.append(res_features)
+        
+        res_features['neighbor_count'] = len(neighbor_residues)
+        res_features['pos_charged_neighbors'] = pos_charged
+        res_features['neg_charged_neighbors'] = neg_charged
+        res_features['net_charge_environment'] = pos_charged - neg_charged
+        
+        # Calculate atom density from 8Å search
+        atom_count = len(neighbors_8a)
+        res_features['atom_density'] = atom_count / (4.0/3.0 * np.pi * 8.0**3)
+        
+        # 8. Convert secondary structure to numerical features using one-hot encoding
+        # Optimize one-hot encoding
+        ss = res_features['ss_type']
+        for ss_type in ss_types:
+            res_features[f'ss_{ss_type}'] = 1 if ss == ss_type else 0
+        
+        # Add to features list
+        features.append(res_features)
     
     # Convert to DataFrame
     df = pd.DataFrame(features)
     
     # Save features to CSV
-    output_file = os.path.join(output_dir, f"{pdb_id}_features.csv")
-    df.to_csv(output_file, index=False)
+    if not df.empty:
+        output_file = os.path.join(output_dir, f"{pdb_id}_features.csv")
+        df.to_csv(output_file, index=False)
+        print(f"Extracted {len(df)} residue features from {pdb_id}")
     
-    print(f"Extracted {len(df)} residue features from {pdb_id}")
     return df
 
-def process_directory(pdb_dir, output_dir="features"):
+def process_pdb_file_wrapper(args):
+    """Wrapper function for multiprocessing"""
+    pdb_file, output_dir = args
+    try:
+        return extract_features(pdb_file, output_dir)
+    except Exception as e:
+        print(f"Error processing {pdb_file}: {e}")
+        return pd.DataFrame()
+
+def process_directory(pdb_dir, output_dir="features", num_processes=None):
     """
-    Process all PDB files in a directory
+    Process all PDB files in a directory using multiple processors
     
     Parameters:
     -----------
@@ -258,24 +329,39 @@ def process_directory(pdb_dir, output_dir="features"):
         Directory containing PDB files
     output_dir : str
         Directory to save feature files
+    num_processes : int, optional
+        Number of processes to use. Defaults to CPU count.
     
     Returns:
     --------
     list
         List of DataFrames with features for each PDB file
     """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get list of PDB files
+    pdb_files = [os.path.join(pdb_dir, file) for file in os.listdir(pdb_dir) if file.endswith(".pdb")]
+    
+    if not pdb_files:
+        print(f"No PDB files found in {pdb_dir}")
+        return []
+    
+    # Determine number of processes to use
+    if num_processes is None:
+        num_processes = max(1, mp.cpu_count() - 1)  # Leave one CPU free
+    
+    # Process files in parallel
+    print(f"Processing {len(pdb_files)} PDB files using {num_processes} processes...")
+    
+    args_list = [(pdb_file, output_dir) for pdb_file in pdb_files]
+    
     all_features = []
-    
-    for file in os.listdir(pdb_dir):
-        if file.endswith(".pdb"):
-            pdb_file = os.path.join(pdb_dir, file)
-            try:
-                features = extract_features(pdb_file, output_dir)
+    with mp.Pool(processes=num_processes) as pool:
+        for features in pool.imap_unordered(process_pdb_file_wrapper, args_list):
+            if not features.empty:
                 all_features.append(features)
-                print(f"Processed {file}")
-            except Exception as e:
-                print(f"Error processing {file}: {e}")
     
+    print(f"Processed {len(all_features)} PDB files successfully")
     return all_features
 
 def combine_features(feature_dfs, output_file="combined_features.csv"):
@@ -294,14 +380,19 @@ def combine_features(feature_dfs, output_file="combined_features.csv"):
     pandas.DataFrame
         Combined features DataFrame
     """
-    combined = pd.concat(feature_dfs, ignore_index=True)
+    if not feature_dfs:
+        print("No features to combine")
+        return pd.DataFrame()
+    
+    # Use more efficient concatenation
+    combined = pd.concat(feature_dfs, ignore_index=True, copy=False)
     combined.to_csv(output_file, index=False)
     print(f"Combined features saved to {output_file}")
     return combined
 
 def label_binding_sites(features_df, binding_sites, output_file="labeled_features.csv"):
     """
-    Label residues as binding or non-binding
+    Label residues as binding or non-binding - optimized version
     
     Parameters:
     -----------
@@ -318,22 +409,34 @@ def label_binding_sites(features_df, binding_sites, output_file="labeled_feature
     pandas.DataFrame
         Labeled features DataFrame
     """
+    if features_df.empty:
+        print("No features to label")
+        return features_df
+    
     # Create a new column for binding site labels
     features_df['is_binding_site'] = 0
     
-    # Label binding sites
-    for i, row in features_df.iterrows():
-        pdb_id = row['pdb_id']
-        chain_id = row['chain_id']
-        res_id = int(row['residue_id'])
-        
-        if pdb_id in binding_sites:
-            if (chain_id, res_id) in binding_sites[pdb_id]:
-                features_df.at[i, 'is_binding_site'] = 1
+    # Create a more efficient lookup dictionary for binding sites
+    binding_lookup = {}
+    for pdb_id, sites in binding_sites.items():
+        binding_lookup[pdb_id] = set((chain, res) for chain, res in sites)
+    
+    # Use vectorized operations where possible
+    for pdb_id in features_df['pdb_id'].unique():
+        if pdb_id in binding_lookup:
+            # Create a mask for this PDB ID
+            pdb_mask = features_df['pdb_id'] == pdb_id
+            
+            # Update binding sites for this PDB
+            for i, row in features_df[pdb_mask].iterrows():
+                chain_id = row['chain_id']
+                res_id = int(row['residue_id'])
+                
+                if (chain_id, res_id) in binding_lookup[pdb_id]:
+                    features_df.at[i, 'is_binding_site'] = 1
     
     # Save labeled features
     features_df.to_csv(output_file, index=False)
-    print(f"Labeled features saved to {output_file}")
     
     # Print class distribution
     binding = features_df['is_binding_site'].sum()
@@ -342,34 +445,3 @@ def label_binding_sites(features_df, binding_sites, output_file="labeled_feature
     print(f"Non-binding sites: {total-binding} ({(total-binding)/total*100:.2f}%)")
     
     return features_df
-
-if __name__ == "__main__":
-    import argparse
-    
-    parser = argparse.ArgumentParser(description='Extract features from PDB files for ligand binding site prediction')
-    parser.add_argument('--pdb_dir', type=str, required=True, help='Directory containing PDB files')
-    parser.add_argument('--output_dir', type=str, default='features', help='Directory to save feature files')
-    parser.add_argument('--binding_sites', type=str, help='Path to binding sites file (optional)')
-    args = parser.parse_args()
-    
-    # Process PDB files
-    feature_dfs = process_directory(args.pdb_dir, args.output_dir)
-    
-    # Combine features
-    combined_features = combine_features(feature_dfs, os.path.join(args.output_dir, "combined_features.csv"))
-    
-    # Label binding sites if provided
-    if args.binding_sites:
-        import json
-        with open(args.binding_sites, 'r') as f:
-            binding_sites = json.load(f)
-        
-        labeled_features = label_binding_sites(
-            combined_features, 
-            binding_sites, 
-            os.path.join(args.output_dir, "labeled_features.csv")
-        )
-        
-        print("Features extracted and labeled successfully!")
-    else:
-        print("Features extracted successfully!")

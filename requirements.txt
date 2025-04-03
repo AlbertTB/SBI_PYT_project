@@ -1,12 +1,12 @@
 USAGE
 # Process prediction files and extract features
-python process_prediction_files.py process --pdb_dir /path/to/pdb_files --prediction_dir /path/to/prediction_files
+python main.py process --pdb_dir /path/to/pdb_files --prediction_dir /path/to/prediction_files
 
 # Convert prediction files to binding sites JSON
-python process_prediction_files.py convert --prediction_dir /path/to/prediction_files
+python main.py convert --prediction_dir /path/to/prediction_files
 
 # Train a Random Forest model
-python process_prediction_files.py train --features_file labeled_features/combined_labeled_features.csv
+python main.py train --features_file labeled_features/combined_labeled_features.csv
 
 # Run predictions on a new PDB file
-python process_prediction_files.py predict --pdb_file new_protein.pdb
+python main.py predict --pdb_file new_protein.pdb

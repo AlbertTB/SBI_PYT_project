@@ -4,6 +4,7 @@ import argparse
 import pandas as pd
 import glob
 from collections import defaultdict
+import joblib
 
 def parse_prediction_file(file_path):
     """
@@ -32,10 +33,9 @@ def parse_prediction_file(file_path):
         if len(res_id_parts) == 4:
             pdb_id = res_id_parts[0]
             chain_id = res_id_parts[1]
-            res_name = res_id_parts[2]
             res_num = int(res_id_parts[3])
             
-            # Store the binding class (ignoring the prediction column as instructed)
+            # Store the binding class
             binding_class = int(row['class'])
             
             # Create a unique identifier for this residue
@@ -73,7 +73,7 @@ def process_all_prediction_files(prediction_dir):
     
     return all_binding_sites
 
-def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features"):
+def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features", num_processes=None):
     """
     Create a labeled dataset by combining PDB features with binding site information.
     
@@ -85,6 +85,8 @@ def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features
         Directory containing prediction files
     output_dir : str
         Directory to save the labeled dataset
+    num_processes : int, optional
+        Number of processes to use for feature extraction. Defaults to CPU count - 1.
         
     Returns:
     --------
@@ -95,11 +97,11 @@ def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Import the feature extraction module (assuming it's in the same directory)
+    # Import the feature extraction module
     import sys
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     
-    from pdb_feature_extraction import extract_features, process_directory
+    from pdb_feature_extraction import process_directory, label_binding_sites, combine_features
     
     # Process all prediction files
     binding_sites = process_all_prediction_files(prediction_dir)
@@ -113,45 +115,66 @@ def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features
         else:
             print(f"Warning: PDB file not found for {pdb_id}")
     
-    # Extract features for each PDB file
-    all_features = []
-    for pdb_file in pdb_files:
-        pdb_id = os.path.basename(pdb_file).split('.')[0]
-        print(f"Processing {pdb_id}...")
+    if not pdb_files:
+        print("No matching PDB files found.")
+        return None
+    
+    # Create a temporary directory just for these PDB files
+    import tempfile
+    import shutil
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Copy relevant PDB files to the temporary directory
+        for pdb_file in pdb_files:
+            shutil.copy2(pdb_file, temp_dir)
         
-        # Extract features
-        features_df = extract_features(pdb_file, output_dir)
-        
-        # Add binding site labels
-        features_df['is_binding_site'] = 0
-        
-        if pdb_id in binding_sites:
-            for i, row in features_df.iterrows():
-                chain_id = row['chain_id']
-                res_id = int(row['residue_id'])
-                
-                if (chain_id, res_id) in binding_sites[pdb_id]:
-                    features_df.at[i, 'is_binding_site'] = binding_sites[pdb_id][(chain_id, res_id)]
-        
-        # Save labeled features for this PDB
-        output_file = os.path.join(output_dir, f"{pdb_id}_labeled_features.csv")
-        features_df.to_csv(output_file, index=False)
-        
-        all_features.append(features_df)
+        # Use process_directory to extract features for all PDB files in parallel
+        print(f"Extracting features for {len(pdb_files)} PDB files using multiprocessing...")
+        feature_dfs = process_directory(temp_dir, output_dir, num_processes)
+    
+    # Convert binding_sites to the format expected by label_binding_sites
+    binding_sites_formatted = {}
+    for pdb_id, sites in binding_sites.items():
+        binding_sites_formatted[pdb_id] = [(chain_id, res_id) for (chain_id, res_id), binding_class in sites.items() 
+                                          if binding_class == 1]  # Only include positive binding sites
     
     # Combine all features
-    if all_features:
-        combined_df = pd.concat(all_features, ignore_index=True)
-        combined_output = os.path.join(output_dir, "combined_labeled_features.csv")
-        combined_df.to_csv(combined_output, index=False)
+    if feature_dfs:
+        print("Combining features and labeling with binding sites...")
+
+        # First combine all features
+        combined_df = combine_features(feature_dfs, os.path.join(output_dir, "combined_features.csv"))
         
+        # Then label them with binding sites
+        labeled_df = label_binding_sites(combined_df, binding_sites_formatted, 
+                                         os.path.join(output_dir, "combined_labeled_features.csv"))
+        
+        # Also save individual labeled files for each PDB
+        '''
+        for pdb_id in combined_df['pdb_id'].unique():
+            pdb_df = combined_df[combined_df['pdb_id'] == pdb_id].copy()
+            
+            # Label binding sites for this PDB
+            if pdb_id in binding_sites_formatted:
+                for i, row in pdb_df.iterrows():
+                    chain_id = row['chain_id']
+                    res_id = int(row['residue_id'])
+                    
+                    if (chain_id, res_id) in binding_sites_formatted[pdb_id]:
+                        pdb_df.at[i, 'is_binding_site'] = 1
+                    else:
+                        pdb_df.at[i, 'is_binding_site'] = 0
+            
+            # Save labeled features for this PDB
+            output_file = os.path.join(output_dir, f"{pdb_id}_labeled_features.csv")
+            pdb_df.to_csv(output_file, index=False)
+        '''
         # Print class distribution
-        binding = combined_df['is_binding_site'].sum()
-        total = len(combined_df)
+        binding = labeled_df['is_binding_site'].sum()
+        total = len(labeled_df)
         print(f"\nBinding sites: {binding} ({binding/total*100:.2f}%)")
         print(f"Non-binding sites: {total-binding} ({(total-binding)/total*100:.2f}%)")
         
-        return combined_df
+        return labeled_df
     else:
         print("No features extracted.")
         return None
@@ -214,7 +237,7 @@ def train_random_forest_model(features_file, output_model="binding_site_model.pk
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import train_test_split, cross_val_score
     from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-    import joblib
+
     
     print(f"Training Random Forest model on {features_file}...")
     
@@ -299,7 +322,6 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     pandas.DataFrame
         DataFrame containing predicted binding sites
     """
-    import joblib
     from pdb_feature_extraction import extract_features
     
     # Create output directory if it doesn't exist
@@ -338,7 +360,6 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     # Create a more readable output format
     results_df = pd.DataFrame({
         'res_name': [f"{pdb_id}_{row['chain_id']}_{row['residue_name']}_{row['residue_id']}" for _, row in features_df.iterrows()],
-        'class': 0,  # Placeholder as per the format you provided
         'prediction': features_df['prediction'],
         'probability': features_df['probability']
     })
