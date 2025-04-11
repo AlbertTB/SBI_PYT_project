@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
-import os
-import numpy as np
-import pandas as pd
-from Bio.PDB import PDBParser, DSSP
-from Bio.PDB.HSExposure import HSExposureCB
-from Bio.PDB.ResidueDepth import ResidueDepth
-from scipy.spatial import KDTree
-import multiprocessing as mp
-from functools import lru_cache
+
+#check if libraries are installed
+try:
+    import os
+    import numpy as np
+    import pandas as pd
+    from Bio.PDB import PDBParser, DSSP
+    from Bio.PDB.HSExposure import HSExposureCB
+    from Bio.PDB.ResidueDepth import ResidueDepth
+    from scipy.spatial import KDTree
+    import multiprocessing as mp
+    import warnings
+    from tqdm import tqdm
+
+
+except ImportError as e:
+    print(f"Error importing libraries: {e}")
+    print("Please ensure all required libraries are installed.")
+    raise
 
 
 # Amino acid properties remain the same
@@ -51,26 +61,29 @@ hbond_acceptor = {
     'SER': 1, 'THR': 1, 'TRP': 0, 'TYR': 1, 'VAL': 0
 }
 
-# Cache for redundant operations
-@lru_cache(maxsize=128)
-
 def calculate_dssp(pdb_file, model):
     """Calculate DSSP with caching for better performance"""
-
+            # Try using DSSP directly through Biopython
+    dssp_data = DSSP(model, pdb_file)
+    
+    # Convert DSSP output to more convenient dict
+    dssp = {}
+    for key in dssp_data.keys():
+        chain_id = key[0]
+        res_id = key[1][1]  # Get residue number
+        dssp[(chain_id, res_id)] = dssp_data[key]
+    
+    return dssp
+    
+def calculate_residue_depth(model):
+    """Calculate residue depth using ResidueDepth while muting MSMS noise"""
     try:
-        # Try using DSSP directly through Biopython
-        dssp_data = DSSP(model, pdb_file)
-        
-        # Convert DSSP output to more convenient dict
-        dssp = {}
-        for key in dssp_data.keys():
-            chain_id = key[0]
-            res_id = key[1][1]  # Get residue number
-            dssp[(chain_id, res_id)] = dssp_data[key]
-        
-        return dssp
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            rd = ResidueDepth(model)
+            return rd
     except Exception as e:
-        print(f"Error calculating DSSP: {e}")
+        print(f"Error calculating Residue Depth: {e}")
         return None
 
 def extract_features(pdb_file, output_dir="features"):
@@ -135,15 +148,9 @@ def extract_features(pdb_file, output_dir="features"):
     dssp = calculate_dssp(pdb_file, model)
     
     # Calculate ResidueDepth efficiently
-    rd = None
-    '''
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            rd = ResidueDepth(model, pdb_file)
-    except Exception:
-        pass
-    '''
+    
+    rd = calculate_residue_depth(model)
+    
     # Calculate HSE (half-sphere exposure)
     hse = None
     
@@ -219,7 +226,7 @@ def extract_features(pdb_file, output_dir="features"):
 
                 res_features['hse_up'] = float(hse_up)
                 res_features['hse_down'] = float(hse_down)
-                res_features['hse_ratio'] = float(hse_up) / (float(hse_down) + 0.1)  # +0.1 to avoid division by zero
+                res_features['hse_ratio'] = float(hse_up) / (float(hse_up) + float(hse_down)) if (float(hse_up) + float(hse_down)) > 0 else 0.0
             except:
                 res_features['hse_up'] = 0.0
                 res_features['hse_down'] = 0.0
@@ -231,17 +238,16 @@ def extract_features(pdb_file, output_dir="features"):
         
         # 4. Residue depth
         if rd:
-            rd_key = (chain_id, res_id)
+            resrd_id = residue.get_id()
+            rd_key = (chain_id, resrd_id)
             try:
                 rd_val, ca_depth = rd[rd_key]
                 res_features['residue_depth'] = float(rd_val)
-                res_features['ca_depth'] = float(ca_depth)
             except:
                 res_features['residue_depth'] = 0.0
-                res_features['ca_depth'] = 0.0
         else:
             res_features['residue_depth'] = 0.0
-            res_features['ca_depth'] = 0.0
+
         
         # 5. & 6. Local environment features and residue protrusion
         # Optimize by combining multiple spatial queries into one
@@ -294,6 +300,8 @@ def extract_features(pdb_file, output_dir="features"):
         # Optimize one-hot encoding
         ss = res_features['ss_type']
         for ss_type in ss_types:
+            if ss_type == "-":
+                res_features[f'ss_{ss_type}'] = 1
             res_features[f'ss_{ss_type}'] = 1 if ss == ss_type else 0
         
         # Add to features list
@@ -301,13 +309,6 @@ def extract_features(pdb_file, output_dir="features"):
     
     # Convert to DataFrame
     df = pd.DataFrame(features)
-    
-    # Save features to CSV
-    if not df.empty:
-        output_file = os.path.join(output_dir, f"{pdb_id}_features.csv")
-        df.to_csv(output_file, index=False)
-        print(f"Extracted {len(df)} residue features from {pdb_id}")
-    
     return df
 
 def process_pdb_file_wrapper(args):
@@ -357,38 +358,15 @@ def process_directory(pdb_dir, output_dir="features", num_processes=None):
     
     all_features = []
     with mp.Pool(processes=num_processes) as pool:
-        for features in pool.imap_unordered(process_pdb_file_wrapper, args_list):
-            if not features.empty:
-                all_features.append(features)
+        with tqdm(total=len(args_list), desc="Extracting features", unit="file") as pbar:
+            for features in pool.imap_unordered(process_pdb_file_wrapper, args_list):
+                if not features.empty:
+                    all_features.append(features)
+                pbar.update(1)
+
     
     print(f"Processed {len(all_features)} PDB files successfully")
     return all_features
-
-def combine_features(feature_dfs, output_file="combined_features.csv"):
-    """
-    Combine all feature DataFrames into a single DataFrame
-    
-    Parameters:
-    -----------
-    feature_dfs : list
-        List of feature DataFrames
-    output_file : str
-        Path to save the combined features
-    
-    Returns:
-    --------
-    pandas.DataFrame
-        Combined features DataFrame
-    """
-    if not feature_dfs:
-        print("No features to combine")
-        return pd.DataFrame()
-    
-    # Use more efficient concatenation
-    combined = pd.concat(feature_dfs, ignore_index=True, copy=False)
-    combined.to_csv(output_file, index=False)
-    print(f"Combined features saved to {output_file}")
-    return combined
 
 def label_binding_sites(features_df, binding_sites, output_file="labeled_features.csv"):
     """
