@@ -5,6 +5,24 @@ import pandas as pd
 import glob
 from collections import defaultdict
 import joblib
+import numpy as np
+import tempfile
+import shutil
+import multiprocessing as mp
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score, RandomizedSearchCV, StratifiedGroupKFold
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, precision_score, recall_score, f1_score
+from pdb_feature_extraction import process_directory, label_binding_sites, extract_features
+from imblearn.pipeline import Pipeline as ImbPipeline
+from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+from pocket_detection import get_geometry_features, integrate_geometry_with_ml_features
+from tqdm import tqdm
+
+def enrich_features(pdb_file_and_df):
+    pdb_file, df = pdb_file_and_df
+    geometry_pocket_df, geometry_residue_df = get_geometry_features(pdb_file)
+    return integrate_geometry_with_ml_features(df, geometry_residue_df)
 
 def parse_prediction_file(file_path):
     """
@@ -73,153 +91,167 @@ def process_all_prediction_files(prediction_dir):
     
     return all_binding_sites
 
-def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features", num_processes=None):
+def create_labeled_dataset(pdb_dir, prediction_dir, output_dir="labeled_features"):
     """
-    Create a labeled dataset by combining PDB features with binding site information.
-    
+    Create a labeled dataset from PDB files and prediction files.
+
     Parameters:
     -----------
     pdb_dir : str
         Directory containing PDB files
-    prediction_dir : str
+    prediction_dir : str 
         Directory containing prediction files
-    output_dir : str
-        Directory to save the labeled dataset
-    num_processes : int, optional
-        Number of processes to use for feature extraction. Defaults to CPU count - 1.
+        output_dir : str
+        Directory to save labeled features
+
+        Returns:
+        --------
+        pandas.DataFrame
+            DataFrame containing labeled features
+    """
+
+    # Number of PDB files in each batch
+    batch_size = 50
+
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # Process all prediction files to get binding sites
+    binding_sites = process_all_prediction_files(prediction_dir)
+    pdb_files = [
+        os.path.join(pdb_dir, f"{pdb_id}.pdb")
+        for pdb_id in binding_sites
+        if os.path.exists(os.path.join(pdb_dir, f"{pdb_id}.pdb"))
+    ]
+
+    if not pdb_files:
+        print("No matching PDB files found.")
+        return None
+
+    # Process PDB files in batches
+    batch_csv_paths = []
+
+    print(f"Processing {len(pdb_files)} PDB files in batches of {batch_size}...")
+
+    num_processes = max(1, mp.cpu_count() - 1)
+
+    for i in range(0, len(pdb_files), batch_size):
+        batch_files = pdb_files[i:i + batch_size]
+        batch_name = f"batch_{i // batch_size}"
+        batch_csv = os.path.join(output_dir, f"{batch_name}.csv")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for pdb_file in batch_files:
+                shutil.copy2(pdb_file, temp_dir)
+
+            batch_dfs = process_directory(temp_dir, output_dir)
+
+        if batch_dfs:
+            batch_df = pd.concat(batch_dfs, ignore_index=True)
+
+            # Add geometry features
+            file_df_pairs = [
+                (pdb_file, batch_df[batch_df['pdb_id'] == os.path.basename(pdb_file).split('.')[0]])
+                for pdb_file in batch_files
+            ]
+
+            with mp.Pool(processes=num_processes) as pool:
+                enriched_dfs = list(tqdm(pool.imap(enrich_features, file_df_pairs), total=len(file_df_pairs), desc="Enriching with geometry"))
+
+            batch_df = pd.concat(enriched_dfs, ignore_index=True)
+            batch_df.to_csv(batch_csv, index=False)
+            batch_csv_paths.append(batch_csv)
+            print(f"\u2714 Saved {len(batch_df)} residues to {batch_csv}")
+        else:
+            print(f"\u26a0 No features extracted in {batch_name}")
+
+    if not batch_csv_paths:
+        print("No batches were successfully processed.")
+        return None
+
+    print("\nCombining batch CSVs into one...")
+    combined_df = pd.concat([pd.read_csv(f) for f in batch_csv_paths], ignore_index=True)
+    combined_path = os.path.join(output_dir, "combined_features.csv")
+    combined_df.to_csv(combined_path, index=False)
+
+    # Label residues
+    binding_sites_formatted = {
+        pdb_id: [(chain_id, res_id) for (chain_id, res_id), binding_class in sites.items() if binding_class == 1]
+        for pdb_id, sites in binding_sites.items()
+    }
+
+    labeled_path = os.path.join(output_dir, "combined_labeled_features.csv")
+    labeled_df = label_binding_sites(combined_df, binding_sites_formatted, labeled_path)
+
+    binding = labeled_df['is_binding_site'].sum()
+    total = len(labeled_df)
+    print(f"\nBinding sites: {binding} ({binding / total * 100:.2f}%)")
+    print(f"Non-binding sites: {total - binding} ({(total - binding) / total * 100:.2f}%)")
+
+    return labeled_df
+
+def engineer_additional_features(df):
+    """
+    Create additional features that might help with binding site prediction
+    
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing the extracted features
         
     Returns:
     --------
     pandas.DataFrame
-        DataFrame containing combined features and labels
+        DataFrame with additional engineered features
     """
-    # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    
-    # Import the feature extraction module
-    import sys
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    
-    from pdb_feature_extraction import process_directory, label_binding_sites, combine_features
-    
-    # Process all prediction files
-    binding_sites = process_all_prediction_files(prediction_dir)
-    
-    # Get PDB files that have prediction data
-    pdb_files = []
-    for pdb_id in binding_sites.keys():
-        pdb_file = os.path.join(pdb_dir, f"{pdb_id}.pdb")
-        if os.path.exists(pdb_file):
-            pdb_files.append(pdb_file)
-        else:
-            print(f"Warning: PDB file not found for {pdb_id}")
-    
-    if not pdb_files:
-        print("No matching PDB files found.")
-        return None
-    
-    # Create a temporary directory just for these PDB files
-    import tempfile
-    import shutil
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Copy relevant PDB files to the temporary directory
-        for pdb_file in pdb_files:
-            shutil.copy2(pdb_file, temp_dir)
-        
-        # Use process_directory to extract features for all PDB files in parallel
-        print(f"Extracting features for {len(pdb_files)} PDB files using multiprocessing...")
-        feature_dfs = process_directory(temp_dir, output_dir, num_processes)
-    
-    # Convert binding_sites to the format expected by label_binding_sites
-    binding_sites_formatted = {}
-    for pdb_id, sites in binding_sites.items():
-        binding_sites_formatted[pdb_id] = [(chain_id, res_id) for (chain_id, res_id), binding_class in sites.items() 
-                                          if binding_class == 1]  # Only include positive binding sites
-    
-    # Combine all features
-    if feature_dfs:
-        print("Combining features and labeling with binding sites...")
+    # Create copy to avoid modifying original
+    df_new = df.copy()   
 
-        # First combine all features
-        combined_df = combine_features(feature_dfs, os.path.join(output_dir, "combined_features.csv"))
-        
-        # Then label them with binding sites
-        labeled_df = label_binding_sites(combined_df, binding_sites_formatted, 
-                                         os.path.join(output_dir, "combined_labeled_features.csv"))
-        
-        # Also save individual labeled files for each PDB
-        '''
-        for pdb_id in combined_df['pdb_id'].unique():
-            pdb_df = combined_df[combined_df['pdb_id'] == pdb_id].copy()
-            
-            # Label binding sites for this PDB
-            if pdb_id in binding_sites_formatted:
-                for i, row in pdb_df.iterrows():
-                    chain_id = row['chain_id']
-                    res_id = int(row['residue_id'])
-                    
-                    if (chain_id, res_id) in binding_sites_formatted[pdb_id]:
-                        pdb_df.at[i, 'is_binding_site'] = 1
-                    else:
-                        pdb_df.at[i, 'is_binding_site'] = 0
-            
-            # Save labeled features for this PDB
-            output_file = os.path.join(output_dir, f"{pdb_id}_labeled_features.csv")
-            pdb_df.to_csv(output_file, index=False)
-        '''
-        # Print class distribution
-        binding = labeled_df['is_binding_site'].sum()
-        total = len(labeled_df)
-        print(f"\nBinding sites: {binding} ({binding/total*100:.2f}%)")
-        print(f"Non-binding sites: {total-binding} ({(total-binding)/total*100:.2f}%)")
-        
-        return labeled_df
-    else:
-        print("No features extracted.")
-        return None
 
-def convert_prediction_to_binding_sites_json(prediction_dir, output_file="binding_sites.json"):
-    """
-    Convert prediction files to a binding sites JSON file for the feature extraction script.
+    # Interaction terms between physicochemical properties
+    df_new['hydro_volume'] = df_new['hydrophobicity'] * df_new['volume']
+    df_new['charge_hbond'] = df_new['charge'] * (df_new['hbond_donor'] + df_new['hbond_acceptor'])
     
-    Parameters:
-    -----------
-    prediction_dir : str
-        Directory containing prediction files
-    output_file : str
-        Path to save the binding sites JSON file
-        
-    Returns:
-    --------
-    dict
-        Dictionary mapping PDB IDs to binding site information
-    """
-    import json
+    # Surface accessibility features
+    df_new['exposed_hydrophobic'] = df_new['hydrophobicity'] * df_new['rel_asa']
+    df_new['exposed_charged'] = abs(df_new['charge']) * df_new['rel_asa']
     
-    # Process all prediction files
-    all_binding_sites = process_all_prediction_files(prediction_dir)
+    # Local environment complexity (entropy of neighbor properties)
+    df_new['local_charge_imbalance'] = abs(df_new['pos_charged_neighbors'] - df_new['neg_charged_neighbors'])
+    df_new['charge_density'] = df_new['net_charge_environment'] / (df_new['neighbor_count'] + 1)  # +1 to avoid division by zero
     
-    # Convert to the format expected by the feature extraction script
-    binding_sites_json = {}
+    # Structural pocket features
+    df_new['inverse_depth'] = 1.0 / (df_new['residue_depth'] + 0.1)  # +0.1 to avoid division by zero
+    df_new['depth_density'] = df_new['residue_depth'] * df_new['atom_density']
     
-    for pdb_id, sites in all_binding_sites.items():
-        binding_sites_json[pdb_id] = []
-        
-        for (chain_id, res_id), binding_class in sites.items():
-            if binding_class == 1:  # Only include positive binding sites
-                binding_sites_json[pdb_id].append([chain_id, res_id])
+    # Residue conservation proxy (based on structural features)
+    df_new['exposure_ratio'] = df_new['hse_up'] / (df_new['hse_down'] + 0.1)  # +0.1 to avoid division by zero
     
-    # Save to JSON file
-    with open(output_file, 'w') as f:
-        json.dump(binding_sites_json, f, indent=2)
+    # Hydrogen bonding potential in local environment
+    df_new['hbond_potential'] = df_new['hbond_donor'] * df_new['hbond_acceptor']
     
-    print(f"Binding sites JSON saved to {output_file}")
-    return binding_sites_json
+    # Create aggregated secondary structure feature
+    # Helix (H,G,I) - Sheet (E,B) - Loop (S,T, ,X)
+    if 'ss_type' in df_new.columns:
+        df_new['is_helix'] = df_new.apply(lambda x: 1 if x['ss_type'] in ['H', 'G', 'I'] else 0, axis=1)
+        df_new['is_sheet'] = df_new.apply(lambda x: 1 if x['ss_type'] in ['E', 'B'] else 0, axis=1)
+        df_new['is_loop'] = df_new.apply(lambda x: 1 if x['ss_type'] in ['S', 'T', ' ', 'X'] else 0, axis=1)
+    
+    # For columns that start with 'ss_', create interaction terms with other features
+    ss_cols = [col for col in df_new.columns if col.startswith('ss_')]
+    for ss_col in ss_cols:
+        df_new[ss_col] = pd.to_numeric(df_new[ss_col], errors='coerce')
+        df_new[f'{ss_col}_hydro'] = df_new[ss_col] * df_new['hydrophobicity']
+        df_new[f'{ss_col}_asa'] = df_new[ss_col] * df_new['rel_asa']
+    
+    return df_new
 
-def train_random_forest_model(features_file, output_model="binding_site_model.pkl"):
+def train_optimized_model(features_file, output_model="binding_site_model.pkl", cv_folds=5, 
+                          nested_cv=True, test_size=0.2, random_state=42):
     """
-    Train a Random Forest model on the labeled dataset.
+    Train an optimized model on the labeled dataset with SMOTE oversampling
+    and proper cross-validation.
     
     Parameters:
     -----------
@@ -227,87 +259,256 @@ def train_random_forest_model(features_file, output_model="binding_site_model.pk
         Path to the CSV file containing labeled features
     output_model : str
         Path to save the trained model
+    cv_folds : int
+        Number of cross-validation folds
+    nested_cv : bool
+        Whether to use nested cross-validation with a separate test set
+    test_size : float
+        Proportion of the dataset to include in the test split if nested_cv is True
+    random_state : int
+        Random state for reproducibility
         
     Returns:
     --------
-    sklearn.ensemble.RandomForestClassifier
-        Trained Random Forest model
+    tuple
+        (trained_model, feature_importances, evaluation_metrics)
     """
-    import numpy as np
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-
-    
-    print(f"Training Random Forest model on {features_file}...")
+    print(f"Training optimized model on {features_file}...")
     
     # Load the features
     df = pd.read_csv(features_file)
     
+    # Add engineered features
+    df = engineer_additional_features(df)
+    
+    # Get groups for stratification
+    groups = df['pdb_id']
+    
     # Drop non-feature columns
     feature_columns = df.columns.tolist()
     non_feature_cols = ['pdb_id', 'chain_id', 'residue_id', 'residue_name', 'ss_type', 'is_binding_site']
+    feature_columns = [col for col in df.columns if col not in non_feature_cols]
     
-    for col in non_feature_cols:
-        if col in feature_columns:
-            feature_columns.remove(col)
+    # Check for columns with constant values and remove them
+    constant_cols = []
+    for col in feature_columns:
+        if df[col].nunique() <= 1:
+            constant_cols.append(col)
+    
+    if constant_cols:
+        print(f"Removing {len(constant_cols)} constant columns: {', '.join(constant_cols)}")
+        feature_columns = [col for col in feature_columns if col not in constant_cols]
     
     # Prepare features and target
-    X = df[feature_columns].fillna(0)  # Replace NaN with 0
+    X = df[feature_columns].fillna(0)
     y = df['is_binding_site']
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    # Create pipeline with preprocessing and SMOTE oversampling
+    pipeline = ImbPipeline([
+        ('scaler', StandardScaler()),
+        ('smote', SMOTE(random_state=random_state, sampling_strategy=0.5)),
+        ('classifier', RandomForestClassifier(
+            n_estimators=100,
+            max_depth=None,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            class_weight='balanced_subsample',
+            max_features='sqrt',
+            random_state=random_state,
+            n_jobs=6
+        ))
+    ])
     
-    # Create and train the model with class balancing
-    rf = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        class_weight='balanced',
-        n_jobs=-1,
-        random_state=42
-    )
+    if nested_cv:
+        # Implement nested cross-validation
+        # Outer loop: final evaluation
+        # Inner loop: model selection/hyperparameter tuning
+        
+        # First split data into training and final test set
+        # Use GroupShuffleSplit to ensure that proteins don't overlap between train and test
+        from sklearn.model_selection import GroupShuffleSplit
+        
+        outer_split = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
+        train_idx, test_idx = next(outer_split.split(X, y, groups=groups))
+        
+        X_train_outer, X_test_final = X.iloc[train_idx], X.iloc[test_idx]
+        y_train_outer, y_test_final = y.iloc[train_idx], y.iloc[test_idx]
+        groups_train = groups.iloc[train_idx]
+        
+        print(f"Split data into training set ({len(X_train_outer)} samples) and final test set ({len(X_test_final)} samples)")
+        print(f"Training set has {y_train_outer.sum()} binding sites ({y_train_outer.sum()/len(y_train_outer)*100:.2f}%)")
+        print(f"Test set has {y_test_final.sum()} binding sites ({y_test_final.sum()/len(y_test_final)*100:.2f}%)")
+        
+        # Inner cross-validation for model selection
+        inner_cv = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+        
+        # Collect metrics from each fold
+        fold_metrics = []
+        print(f"\nPerforming {cv_folds}-fold cross-validation on training set...")
+        
+        for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer, y_train_outer, groups_train)):
+            X_train, X_val = X_train_outer.iloc[train_idx], X_train_outer.iloc[val_idx]
+            y_train, y_val = y_train_outer.iloc[train_idx], y_train_outer.iloc[val_idx]
+            
+            print(f"\nFold {fold+1}/{cv_folds}:")
+            print(f"Training samples: {len(X_train)}, Validation samples: {len(X_val)}")
+            
+            # Train the model
+            pipeline.fit(X_train, y_train)
+            
+            # Evaluate on validation set
+            y_pred = pipeline.predict(X_val)
+            y_prob = pipeline.predict_proba(X_val)[:, 1]
+            
+            # Calculate metrics
+            fold_metric = {
+                'fold': fold+1,
+                'accuracy': np.mean(y_pred == y_val),
+                'precision': precision_score(y_val, y_pred),
+                'recall': recall_score(y_val, y_pred),
+                'f1': f1_score(y_val, y_pred),
+                'roc_auc': roc_auc_score(y_val, y_prob)
+            }
+            
+            fold_metrics.append(fold_metric)
+            print(f"Fold {fold+1} metrics: Precision={fold_metric['precision']:.4f}, Recall={fold_metric['recall']:.4f}, F1={fold_metric['f1']:.4f}")
+        
+        # Average cross-validation metrics
+        avg_metrics = {metric: np.mean([fold[metric] for fold in fold_metrics]) 
+                      for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']}
+        
+        print("\nCross-validation results:")
+        for metric, value in avg_metrics.items():
+            print(f"Average {metric}: {value:.4f}")
+        
+        # Now train the final model on the entire training set
+        print("\nTraining final model on entire training set...")
+        pipeline.fit(X_train_outer, y_train_outer)
+        
+        # Evaluate on the held-out test set
+        y_pred_final = pipeline.predict(X_test_final)
+        y_prob_final = pipeline.predict_proba(X_test_final)[:, 1]
+        
+        final_metrics = {
+            'accuracy': np.mean(y_pred_final == y_test_final),
+            'precision': precision_score(y_test_final, y_pred_final),
+            'recall': recall_score(y_test_final, y_pred_final),
+            'f1': f1_score(y_test_final, y_pred_final),
+            'roc_auc': roc_auc_score(y_test_final, y_prob_final)
+        }
+        
+        print("\nFinal Test Set Metrics:")
+        for metric, value in final_metrics.items():
+            print(f"{metric}: {value:.4f}")
+        
+        print("\nClassification Report on Test Set:")
+        print(classification_report(y_test_final, y_pred_final))
+        
+        print("\nConfusion Matrix on Test Set:")
+        print(confusion_matrix(y_test_final, y_pred_final))
     
-    # Perform cross-validation
-    cv_scores = cross_val_score(rf, X_train, y_train, cv=5, scoring='roc_auc')
-    print(f"Cross-validation ROC-AUC: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+    else:
+        # Standard k-fold cross-validation
+        cv = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+        
+        # Collect metrics from each fold
+        fold_metrics = []
+        all_true = []
+        all_pred = []
+        all_prob = []
+        
+        print(f"\nPerforming {cv_folds}-fold cross-validation...")
+        
+        for fold, (train_idx, test_idx) in enumerate(cv.split(X, y, groups)):
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+            
+            print(f"\nFold {fold+1}/{cv_folds}:")
+            print(f"Training samples: {len(X_train)}, Test samples: {len(X_test)}")
+            
+            # Train the model
+            pipeline.fit(X_train, y_train)
+            
+            # Evaluate on test set
+            y_pred = pipeline.predict(X_test)
+            y_prob = pipeline.predict_proba(X_test)[:, 1]
+            
+            # Store predictions for overall metrics
+            all_true.extend(y_test)
+            all_pred.extend(y_pred)
+            all_prob.extend(y_prob)
+            
+            # Calculate metrics
+            fold_metric = {
+                'fold': fold+1,
+                'accuracy': np.mean(y_pred == y_test),
+                'precision': precision_score(y_test, y_pred),
+                'recall': recall_score(y_test, y_pred),
+                'f1': f1_score(y_test, y_pred),
+                'roc_auc': roc_auc_score(y_test, y_prob)
+            }
+            
+            fold_metrics.append(fold_metric)
+            print(f"Fold {fold+1} metrics: Precision={fold_metric['precision']:.4f}, Recall={fold_metric['recall']:.4f}, F1={fold_metric['f1']:.4f}")
+        
+        # Average cross-validation metrics
+        avg_metrics = {metric: np.mean([fold[metric] for fold in fold_metrics]) 
+                      for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']}
+        
+        print("\nCross-validation results:")
+        for metric, value in avg_metrics.items():
+            print(f"Average {metric}: {value:.4f}")
+        
+        # Overall metrics across all folds
+        overall_metrics = {
+            'accuracy': np.mean(np.array(all_pred) == np.array(all_true)),
+            'precision': precision_score(all_true, all_pred),
+            'recall': recall_score(all_true, all_pred),
+            'f1': f1_score(all_true, all_pred),
+            'roc_auc': roc_auc_score(all_true, all_prob)
+        }
+        
+        print("\nOverall metrics across all folds:")
+        for metric, value in overall_metrics.items():
+            print(f"{metric}: {value:.4f}")
+        
+        print("\nOverall Classification Report:")
+        print(classification_report(all_true, all_pred))
+        
+        print("\nOverall Confusion Matrix:")
+        print(confusion_matrix(all_true, all_pred))
+        
+        # Train the final model on the entire dataset
+        print("\nTraining final model on entire dataset...")
+        pipeline.fit(X, y)
+        final_metrics = avg_metrics
     
-    # Train on the full training set
-    rf.fit(X_train, y_train)
-    
-    # Evaluate on test set
-    y_pred = rf.predict(X_test)
-    y_prob = rf.predict_proba(X_test)[:, 1]
-    
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred))
-    
-    print("\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
-    
-    print(f"\nROC-AUC Score: {roc_auc_score(y_test, y_prob):.4f}")
-    
-    # Feature importance
+    # Get feature importances from the classifier
+    rf_classifier = pipeline.named_steps['classifier']
     feature_importances = pd.DataFrame({
         'Feature': feature_columns,
-        'Importance': rf.feature_importances_
+        'Importance': rf_classifier.feature_importances_
     }).sort_values(by='Importance', ascending=False)
     
-    print("\nTop 10 most important features:")
-    print(feature_importances.head(10))
+    print("\nTop 15 most important features:")
+    print(feature_importances.head(15))
     
     # Save the model
-    joblib.dump(rf, output_model)
+    joblib.dump(pipeline, output_model, compress=3)
     print(f"\nModel saved to {output_model}")
     
-    return rf
+    if nested_cv:
+        return pipeline, feature_importances, {
+            'cv_metrics': avg_metrics,
+            'test_metrics': final_metrics
+        }
+    else:
+        return pipeline, feature_importances, final_metrics
 
 def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", output_dir="predictions"):
     """
-    Run the prediction pipeline on a new PDB file.
-    
+    Run the prediction pipeline on a new PDB file and create a visualization PDB file.
+
     Parameters:
     -----------
     pdb_file : str
@@ -315,62 +516,74 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     model_file : str
         Path to the trained model
     output_dir : str
-        Directory to save the predictions
+        Directory to save the predictions and visualization PDB file
         
     Returns:
     --------
     pandas.DataFrame
         DataFrame containing predicted binding sites
     """
-    from pdb_feature_extraction import extract_features
-    
+
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     # Extract features
     features_df = extract_features(pdb_file, output_dir)
-    
+
     # Load the model
     rf = joblib.load(model_file)
-    
+
     # Drop non-feature columns
     feature_columns = features_df.columns.tolist()
     non_feature_cols = ['pdb_id', 'chain_id', 'residue_id', 'residue_name', 'ss_type']
-    
+
     for col in non_feature_cols:
         if col in feature_columns:
             feature_columns.remove(col)
-    
+
     # Prepare features
     X = features_df[feature_columns].fillna(0)  # Replace NaN with 0
-    
+
     # Make predictions
     predictions = rf.predict(X)
     probabilities = rf.predict_proba(X)[:, 1]
-    
+
     # Add predictions to the DataFrame
     features_df['prediction'] = predictions
     features_df['probability'] = probabilities
-    
+
     # Save predictions
     pdb_id = os.path.basename(pdb_file).split('.')[0]
     output_file = os.path.join(output_dir, f"{pdb_id}_predictions.csv")
-    
+
     # Create a more readable output format
     results_df = pd.DataFrame({
         'res_name': [f"{pdb_id}_{row['chain_id']}_{row['residue_name']}_{row['residue_id']}" for _, row in features_df.iterrows()],
         'prediction': features_df['prediction'],
         'probability': features_df['probability']
     })
-    
+
     results_df.to_csv(output_file, index=False)
     print(f"Predictions saved to {output_file}")
-    
+
+    # Create a visualizable PDB file
+    binding_sites = [
+        (row['chain_id'], int(row['residue_id']))
+        for _, row in features_df.iterrows() if row['prediction'] == 1
+    ]
+    output_pdb_file = os.path.join(output_dir, f"{pdb_id}_visualization.pdb")
+    #create_visualization_pdb(pdb_file, binding_sites, output_pdb_file)
+
     return results_df
+    #visualization in PyMOL: spectrum b, blue_white_red, minimum=0, maximum=1
+    #Binding sites red, non-binding sites blue
+    #In Chimera:
+    #Go to Tools > Depiction > Render by Attribute.
+    #Select B-factor as the attribute to render.
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process prediction files and generate binding site features")
+    parser = argparse.ArgumentParser(description="Improved binding site prediction pipeline")
     
     # Command group
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -381,15 +594,11 @@ if __name__ == "__main__":
     process_parser.add_argument("--prediction_dir", required=True, help="Directory containing prediction files")
     process_parser.add_argument("--output_dir", default="labeled_features", help="Directory to save labeled features")
     
-    # Convert predictions to JSON command
-    convert_parser = subparsers.add_parser("convert", help="Convert prediction files to binding sites JSON")
-    convert_parser.add_argument("--prediction_dir", required=True, help="Directory containing prediction files")
-    convert_parser.add_argument("--output_file", default="binding_sites.json", help="Output JSON file")
-    
     # Train model command
-    train_parser = subparsers.add_parser("train", help="Train a Random Forest model")
+    train_parser = subparsers.add_parser("train", help="Train an optimized model")
     train_parser.add_argument("--features_file", required=True, help="CSV file with labeled features")
     train_parser.add_argument("--output_model", default="binding_site_model.pkl", help="Output model file")
+    train_parser.add_argument("--nested_cv", action="store_true", help="Use nested cross-validation")
     
     # Predict command
     predict_parser = subparsers.add_parser("predict", help="Run predictions on a new PDB file")
@@ -401,10 +610,8 @@ if __name__ == "__main__":
     
     if args.command == "process":
         create_labeled_dataset(args.pdb_dir, args.prediction_dir, args.output_dir)
-    elif args.command == "convert":
-        convert_prediction_to_binding_sites_json(args.prediction_dir, args.output_file)
     elif args.command == "train":
-        train_random_forest_model(args.features_file, args.output_model)
+        train_optimized_model(args.features_file, args.output_model)
     elif args.command == "predict":
         run_prediction_pipeline(args.pdb_file, args.model_file, args.output_dir)
     else:
