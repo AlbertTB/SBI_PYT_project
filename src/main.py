@@ -247,10 +247,11 @@ def engineer_additional_features(df):
     
     return df_new
 
-def train_optimized_model(features_file, output_model="binding_site_model.pkl", cv_folds=5, perform_search=True):
+def train_optimized_model(features_file, output_model="binding_site_model.pkl", cv_folds=5, 
+                          nested_cv=True, test_size=0.2, random_state=42):
     """
     Train an optimized model on the labeled dataset with SMOTE oversampling
-    and hyperparameter tuning.
+    and proper cross-validation.
     
     Parameters:
     -----------
@@ -260,8 +261,12 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
         Path to save the trained model
     cv_folds : int
         Number of cross-validation folds
-    perform_search : bool
-        Whether to perform hyperparameter search (slower but better results)
+    nested_cv : bool
+        Whether to use nested cross-validation with a separate test set
+    test_size : float
+        Proportion of the dataset to include in the test split if nested_cv is True
+    random_state : int
+        Random state for reproducibility
         
     Returns:
     --------
@@ -276,6 +281,7 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
     # Add engineered features
     df = engineer_additional_features(df)
     
+    # Get groups for stratification
     groups = df['pdb_id']
     
     # Drop non-feature columns
@@ -297,92 +303,188 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
     X = df[feature_columns].fillna(0)
     y = df['is_binding_site']
     
-    # Create stratified group k-fold splits to account for protein-level grouping
-    gkf = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-    
-    # Extract a single fold for final evaluation
-    for train_idx, test_idx in gkf.split(X, y, groups):
-        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-        test_groups = groups.iloc[test_idx]
-        break
-    
-    # Build pipeline with preprocessing and SMOTE oversampling
+    # Create pipeline with preprocessing and SMOTE oversampling
     pipeline = ImbPipeline([
         ('scaler', StandardScaler()),
-        ('smote', SMOTE(random_state=42, sampling_strategy=0.5)),  # Create synthetic examples for minority class
-        ('classifier', RandomForestClassifier(random_state=42, n_jobs=6))
+        ('smote', SMOTE(random_state=random_state, sampling_strategy=0.5)),
+        ('classifier', RandomForestClassifier(
+            n_estimators=100,
+            max_depth=None,
+            min_samples_split=5,
+            min_samples_leaf=2,
+            class_weight='balanced_subsample',
+            max_features='sqrt',
+            random_state=random_state,
+            n_jobs=6
+        ))
     ])
     
-    if perform_search:
-        # Parameter grid for GridSearchCV
-        param_grid = {
-            'classifier__n_estimators': [100, 200, 300],
-            'classifier__max_depth': [None, 20, 30, 40],
-            'classifier__min_samples_split': [2, 5, 10],
-            'classifier__class_weight': [None, 'balanced', 'balanced_subsample'],
-            'smote__sampling_strategy': [0.3, 0.5, 0.7]  # Try different oversampling ratios
+    if nested_cv:
+        # Implement nested cross-validation
+        # Outer loop: final evaluation
+        # Inner loop: model selection/hyperparameter tuning
+        
+        # First split data into training and final test set
+        # Use GroupShuffleSplit to ensure that proteins don't overlap between train and test
+        from sklearn.model_selection import GroupShuffleSplit
+        
+        outer_split = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=random_state)
+        train_idx, test_idx = next(outer_split.split(X, y, groups=groups))
+        
+        X_train_outer, X_test_final = X.iloc[train_idx], X.iloc[test_idx]
+        y_train_outer, y_test_final = y.iloc[train_idx], y.iloc[test_idx]
+        groups_train = groups.iloc[train_idx]
+        
+        print(f"Split data into training set ({len(X_train_outer)} samples) and final test set ({len(X_test_final)} samples)")
+        print(f"Training set has {y_train_outer.sum()} binding sites ({y_train_outer.sum()/len(y_train_outer)*100:.2f}%)")
+        print(f"Test set has {y_test_final.sum()} binding sites ({y_test_final.sum()/len(y_test_final)*100:.2f}%)")
+        
+        # Inner cross-validation for model selection
+        inner_cv = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
+        
+        # Collect metrics from each fold
+        fold_metrics = []
+        print(f"\nPerforming {cv_folds}-fold cross-validation on training set...")
+        
+        for fold, (train_idx, val_idx) in enumerate(inner_cv.split(X_train_outer, y_train_outer, groups_train)):
+            X_train, X_val = X_train_outer.iloc[train_idx], X_train_outer.iloc[val_idx]
+            y_train, y_val = y_train_outer.iloc[train_idx], y_train_outer.iloc[val_idx]
+            
+            print(f"\nFold {fold+1}/{cv_folds}:")
+            print(f"Training samples: {len(X_train)}, Validation samples: {len(X_val)}")
+            
+            # Train the model
+            pipeline.fit(X_train, y_train)
+            
+            # Evaluate on validation set
+            y_pred = pipeline.predict(X_val)
+            y_prob = pipeline.predict_proba(X_val)[:, 1]
+            
+            # Calculate metrics
+            fold_metric = {
+                'fold': fold+1,
+                'accuracy': np.mean(y_pred == y_val),
+                'precision': precision_score(y_val, y_pred),
+                'recall': recall_score(y_val, y_pred),
+                'f1': f1_score(y_val, y_pred),
+                'roc_auc': roc_auc_score(y_val, y_prob)
+            }
+            
+            fold_metrics.append(fold_metric)
+            print(f"Fold {fold+1} metrics: Precision={fold_metric['precision']:.4f}, Recall={fold_metric['recall']:.4f}, F1={fold_metric['f1']:.4f}")
+        
+        # Average cross-validation metrics
+        avg_metrics = {metric: np.mean([fold[metric] for fold in fold_metrics]) 
+                      for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']}
+        
+        print("\nCross-validation results:")
+        for metric, value in avg_metrics.items():
+            print(f"Average {metric}: {value:.4f}")
+        
+        # Now train the final model on the entire training set
+        print("\nTraining final model on entire training set...")
+        pipeline.fit(X_train_outer, y_train_outer)
+        
+        # Evaluate on the held-out test set
+        y_pred_final = pipeline.predict(X_test_final)
+        y_prob_final = pipeline.predict_proba(X_test_final)[:, 1]
+        
+        final_metrics = {
+            'accuracy': np.mean(y_pred_final == y_test_final),
+            'precision': precision_score(y_test_final, y_pred_final),
+            'recall': recall_score(y_test_final, y_pred_final),
+            'f1': f1_score(y_test_final, y_pred_final),
+            'roc_auc': roc_auc_score(y_test_final, y_prob_final)
         }
         
-        # Use inner cross-validation to tune hyperparameters
-        inner_cv = StratifiedGroupKFold(n_splits=3, shuffle=True, random_state=42)
+        print("\nFinal Test Set Metrics:")
+        for metric, value in final_metrics.items():
+            print(f"{metric}: {value:.4f}")
         
+        print("\nClassification Report on Test Set:")
+        print(classification_report(y_test_final, y_pred_final))
         
-        random_search = RandomizedSearchCV(
-            pipeline, param_distributions=param_grid, 
-            n_iter=20,  # Much fewer combinations than full grid search
-            cv=inner_cv, 
-            scoring='recall', 
-            verbose=1, 
-            n_jobs=1,  # Reduce parallelism to save memory
-            random_state=42
-        )
-
-        print("Performing randomized hyperparameter search...")
-        random_search.fit(X_train, y_train, groups=groups.iloc[train_idx])
-        best_pipeline = random_search.best_estimator_
-        print(f"Best parameters: {random_search.best_params_}")
+        print("\nConfusion Matrix on Test Set:")
+        print(confusion_matrix(y_test_final, y_pred_final))
+    
     else:
-        # Use default parameters with some improvements
-        pipeline.set_params(
-            classifier__n_estimators=300,
-            classifier__max_depth=None,
-            classifier__min_samples_split=5,
-            classifier__min_samples_leaf=2,
-            classifier__class_weight='balanced_subsample',
-            classifier__max_features='sqrt',
-            smote__sampling_strategy=0.5,
-        )
+        # Standard k-fold cross-validation
+        cv = StratifiedGroupKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
         
-        print("Fitting model with pre-defined parameters...")
-        pipeline.fit(X_train, y_train)
-        best_pipeline = pipeline
-    
-    # Evaluate on test set
-    y_pred = best_pipeline.predict(X_test)
-    y_prob = best_pipeline.predict_proba(X_test)[:, 1]
-    
-    # Calculate metrics with focus on recall
-    metrics = {
-        'accuracy': np.mean(y_pred == y_test),
-        'precision': precision_score(y_test, y_pred),
-        'recall': recall_score(y_test, y_pred),
-        'f1': f1_score(y_test, y_pred),
-        'roc_auc': roc_auc_score(y_test, y_prob)
-    }
-    
-    print("\nTest Set Metrics:")
-    for metric, value in metrics.items():
-        print(f"{metric}: {value:.4f}")
-    
-    print("\nClassification Report:")
-    print(classification_report(y_test, y_pred))
-    
-    print("\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
+        # Collect metrics from each fold
+        fold_metrics = []
+        all_true = []
+        all_pred = []
+        all_prob = []
+        
+        print(f"\nPerforming {cv_folds}-fold cross-validation...")
+        
+        for fold, (train_idx, test_idx) in enumerate(cv.split(X, y, groups)):
+            X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+            y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+            
+            print(f"\nFold {fold+1}/{cv_folds}:")
+            print(f"Training samples: {len(X_train)}, Test samples: {len(X_test)}")
+            
+            # Train the model
+            pipeline.fit(X_train, y_train)
+            
+            # Evaluate on test set
+            y_pred = pipeline.predict(X_test)
+            y_prob = pipeline.predict_proba(X_test)[:, 1]
+            
+            # Store predictions for overall metrics
+            all_true.extend(y_test)
+            all_pred.extend(y_pred)
+            all_prob.extend(y_prob)
+            
+            # Calculate metrics
+            fold_metric = {
+                'fold': fold+1,
+                'accuracy': np.mean(y_pred == y_test),
+                'precision': precision_score(y_test, y_pred),
+                'recall': recall_score(y_test, y_pred),
+                'f1': f1_score(y_test, y_pred),
+                'roc_auc': roc_auc_score(y_test, y_prob)
+            }
+            
+            fold_metrics.append(fold_metric)
+            print(f"Fold {fold+1} metrics: Precision={fold_metric['precision']:.4f}, Recall={fold_metric['recall']:.4f}, F1={fold_metric['f1']:.4f}")
+        
+        # Average cross-validation metrics
+        avg_metrics = {metric: np.mean([fold[metric] for fold in fold_metrics]) 
+                      for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']}
+        
+        print("\nCross-validation results:")
+        for metric, value in avg_metrics.items():
+            print(f"Average {metric}: {value:.4f}")
+        
+        # Overall metrics across all folds
+        overall_metrics = {
+            'accuracy': np.mean(np.array(all_pred) == np.array(all_true)),
+            'precision': precision_score(all_true, all_pred),
+            'recall': recall_score(all_true, all_pred),
+            'f1': f1_score(all_true, all_pred),
+            'roc_auc': roc_auc_score(all_true, all_prob)
+        }
+        
+        print("\nOverall metrics across all folds:")
+        for metric, value in overall_metrics.items():
+            print(f"{metric}: {value:.4f}")
+        
+        print("\nOverall Classification Report:")
+        print(classification_report(all_true, all_pred))
+        
+        print("\nOverall Confusion Matrix:")
+        print(confusion_matrix(all_true, all_pred))
+        
+        # Train the final model on the entire dataset
+        print("\nTraining final model on entire dataset...")
+        pipeline.fit(X, y)
+        final_metrics = avg_metrics
     
     # Get feature importances from the classifier
-    rf_classifier = best_pipeline.named_steps['classifier']
+    rf_classifier = pipeline.named_steps['classifier']
     feature_importances = pd.DataFrame({
         'Feature': feature_columns,
         'Importance': rf_classifier.feature_importances_
@@ -392,10 +494,16 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
     print(feature_importances.head(15))
     
     # Save the model
-    joblib.dump(best_pipeline, output_model, compress=3)
+    joblib.dump(pipeline, output_model, compress=3)
     print(f"\nModel saved to {output_model}")
     
-    return best_pipeline, feature_importances, metrics
+    if nested_cv:
+        return pipeline, feature_importances, {
+            'cv_metrics': avg_metrics,
+            'test_metrics': final_metrics
+        }
+    else:
+        return pipeline, feature_importances, final_metrics
 
 def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", output_dir="predictions"):
     """
@@ -490,21 +598,20 @@ if __name__ == "__main__":
     train_parser = subparsers.add_parser("train", help="Train an optimized model")
     train_parser.add_argument("--features_file", required=True, help="CSV file with labeled features")
     train_parser.add_argument("--output_model", default="binding_site_model.pkl", help="Output model file")
-    train_parser.add_argument("--random_search", action="store_true", help="Perform grid search for hyperparameters")
+    train_parser.add_argument("--nested_cv", action="store_true", help="Use nested cross-validation")
     
     # Predict command
     predict_parser = subparsers.add_parser("predict", help="Run predictions on a new PDB file")
     predict_parser.add_argument("--pdb_file", required=True, help="PDB file to predict on")
     predict_parser.add_argument("--model_file", default="binding_site_model.pkl", help="Trained model file")
     predict_parser.add_argument("--output_dir", default="predictions", help="Directory to save predictions")
-    predict_parser.add_argument("--ensemble", action="store_true", help="Use ensemble prediction")
     
     args = parser.parse_args()
     
     if args.command == "process":
         create_labeled_dataset(args.pdb_dir, args.prediction_dir, args.output_dir)
     elif args.command == "train":
-        train_optimized_model(args.features_file, args.output_model, perform_search=args.random_search)
+        train_optimized_model(args.features_file, args.output_model)
     elif args.command == "predict":
         run_prediction_pipeline(args.pdb_file, args.model_file, args.output_dir)
     else:
