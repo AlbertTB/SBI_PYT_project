@@ -1,6 +1,6 @@
 import glob
 
-pdb_files = glob.glob("train_data/holo4k/receptor/*.pdb")
+pdb_files = glob.glob("test/astex/receptor/*.pdb")
 
 for pdb_file in pdb_files:
     with open(pdb_file, "r") as f:
