@@ -1,0 +1,39 @@
+Final Test Set Metrics:
+accuracy: 0.9651
+precision: 0.7573
+recall: 0.5694
+f1: 0.6500
+roc_auc: 0.9451
+
+Classification Report on Test Set:
+              precision    recall  f1-score   support
+
+           0       0.97      0.99      0.98    387543
+           1       0.76      0.57      0.65     23365
+
+    accuracy                           0.97    410908
+   macro avg       0.87      0.78      0.82    410908
+weighted avg       0.96      0.97      0.96    410908
+
+
+Confusion Matrix on Test Set:
+[[383279   4264]
+ [ 10061  13304]]
+
+Top 15 most important features:
+                  Feature  Importance
+12         neighbor_count    0.095993
+5                 rel_asa    0.085291
+8                  hse_up    0.060832
+9                hse_down    0.055869
+33    exposed_hydrophobic    0.052684
+37          inverse_depth    0.038351
+10              hse_ratio    0.036594
+16           atom_density    0.034821
+38          depth_density    0.033449
+39         exposure_ratio    0.033415
+14  neg_charged_neighbors    0.032893
+11          residue_depth    0.032633
+7                     psi    0.027937
+13  pos_charged_neighbors    0.027789
+6                     phi    0.027104
