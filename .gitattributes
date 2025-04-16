@@ -1,3 +1,4 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 RFV3.mdl filter=lfs diff=lfs merge=lfs -text
+labeled_features/combined_labeled_features.csv filter=lfs diff=lfs merge=lfs -text
