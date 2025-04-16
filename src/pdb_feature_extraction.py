@@ -320,7 +320,7 @@ def process_pdb_file_wrapper(args):
         print(f"Error processing {pdb_file}: {e}")
         return pd.DataFrame()
 
-def process_directory(pdb_dir, output_dir="features", num_processes=None):
+def process_directory(pdb_dir, output_dir="features"):
     """
     Process all PDB files in a directory using multiple processors
     
@@ -348,8 +348,7 @@ def process_directory(pdb_dir, output_dir="features", num_processes=None):
         return []
     
     # Determine number of processes to use
-    if num_processes is None:
-        num_processes = max(1, mp.cpu_count() - 1)  # Leave one CPU free
+    num_processes = max(1, mp.cpu_count() - 1)  # Leave one CPU free
     
     # Process files in parallel
     print(f"Processing {len(pdb_files)} PDB files using {num_processes} processes...")
