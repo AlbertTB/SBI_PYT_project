@@ -1,9 +1,0 @@
-USAGE
-# Process prediction files and extract features
-python main.py process --pdb_dir /path/to/pdb_files --prediction_dir /path/to/prediction_files
-
-# Train a Random Forest model
-python main.py train --features_file labeled_features/combined_labeled_features.csv
-
-# Run predictions on a new PDB file
-python main.py predict --pdb_file new_protein.pdb

@@ -1,0 +1,18 @@
+USAGE
+
+-h / --help            
+
+# Process prediction files and extract features. This process may take too long depending on the number of PDB files
+python main.py process --pdb_dir /path/to/pdb_files --prediction_dir /path/to/prediction_files --output_dir /path/to/output_dir --log_file path/to/log_file.log
+
+# --output_dir and --log_file are optional arguments. If not provided, the default values will be used.
+
+# Train a Random Forest model
+python main.py train --features_file labeled_features/combined_labeled_features.csv --output_model path/to/name_of_model --nested_cv --log_file path/to/log_file.log
+
+# --nested_cv,--output_model and --log_file are optional arguments. If not provided, the default values will be used.
+
+# Run predictions on a new PDB file
+python main.py predict --pdb_file new_protein.pdb --model_file path/to/name_of_model --output_dir /path/to/output_dir --log_file path/to/log_file.log
+
+# --model_file, --output_dir and --log_file are optional arguments. If not provided, the default values will be used.
