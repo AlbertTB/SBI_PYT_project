@@ -50,6 +50,59 @@ def enrich_features(pdb_file_and_df):
     geometry_pocket_df, geometry_residue_df = get_geometry_features(pdb_file)
     return integrate_geometry_with_ml_features(df, geometry_residue_df)
 
+def create_visualization_pdb(input_pdb, binding_sites, output_pdb):
+    """
+    Create a PDB file with modified B-factor values for visualizing binding sites in PyMOL/Chimera.
+    
+    Parameters:
+    -----------
+    input_pdb : str
+        Path to the input PDB file
+    binding_sites : list
+        List of tuples (chain_id, residue_id) for predicted binding sites
+    output_pdb : str
+        Path to save the output visualization PDB file
+        
+    Returns:
+    --------
+    str
+        Path to the created visualization PDB file
+    """
+    # Convert binding sites list to set for faster lookup
+    binding_sites_set = set(binding_sites)
+    
+    # Read the input PDB file
+    with open(input_pdb, 'r') as f:
+        pdb_lines = f.readlines()
+    
+    # Modify B-factor values
+    new_pdb_lines = []
+    for line in pdb_lines:
+        if line.startswith('ATOM') or line.startswith('HETATM'):
+            # Extract chain and residue info
+            chain_id = line[21:22].strip()
+            residue_id = int(line[22:26].strip())
+            
+            # Set B-factor value (100 for binding sites, 0 for non-binding)
+            b_factor = 100.0 if (chain_id, residue_id) in binding_sites_set else 0.0
+            
+            # Replace B-factor field (columns 61-66)
+            new_line = line[:60] + f"{b_factor:6.2f}" + line[66:]
+            new_pdb_lines.append(new_line)
+        else:
+            new_pdb_lines.append(line)
+    
+    # Write the modified PDB file
+    with open(output_pdb, 'w') as f:
+        f.writelines(new_pdb_lines)
+    
+    logger.info(f"Created visualization PDB file: {output_pdb}")
+    logger.info("Visualization instructions:")
+    logger.info("PyMOL: load the file and use 'spectrum b, blue_white_red, minimum=0, maximum=100'")
+    logger.info("Chimera: load the file, then use Tools > Depiction > Render by Attribute and select B-factor")
+    
+    return output_pdb
+
 def parse_prediction_file(file_path):
     """
     Parse a prediction file and extract binding site labels.
@@ -382,8 +435,9 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
             pipeline.fit(X_train, y_train)
             
             # Evaluate on validation set
-            y_pred = pipeline.predict(X_val)
             y_prob = pipeline.predict_proba(X_val)[:, 1]
+            y_pred = (y_prob >= 0.4).astype(int)
+            
             
             # Calculate metrics
             fold_metric = {
@@ -455,8 +509,8 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
             pipeline.fit(X_train, y_train)
             
             # Evaluate on test set
-            y_pred = pipeline.predict(X_test)
             y_prob = pipeline.predict_proba(X_test)[:, 1]
+            y_pred = (y_prob >= 0.4).astype(int)
             
             # Store predictions for overall metrics
             all_true.extend(y_test)
@@ -571,8 +625,9 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     X = features_df[feature_columns].fillna(0)  # Replace NaN with 0
 
     # Make predictions
-    predictions = rf.predict(X)
     probabilities = rf.predict_proba(X)[:, 1]
+    predictions = (probabilities >= 0.4).astype(int)
+    
 
     # Add predictions to the DataFrame
     features_df['prediction'] = predictions
@@ -582,7 +637,7 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     pdb_id = os.path.basename(pdb_file).split('.')[0]
     output_file = os.path.join(output_dir, f"{pdb_id}_predictions.csv")
 
-    # Create a more readable output format
+    # Create a prediction file
     results_df = pd.DataFrame({
         'res_name': [f"{pdb_id}_{row['chain_id']}_{row['residue_name']}_{row['residue_id']}" for _, row in features_df.iterrows()],
         'prediction': features_df['prediction'],
@@ -592,20 +647,21 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     results_df.to_csv(output_file, index=False)
     logger.info(f"Predictions saved to {output_file}")
 
+    # Create a binding sites only file
+    binding_sites_df = results_df[results_df['prediction'] == 1].copy()
+    binding_sites_output = os.path.join(output_dir, f"{pdb_id}_binding_sites.csv")
+    binding_sites_df.to_csv(binding_sites_output, index=False)
+    logger.info(f"Binding sites only saved to {binding_sites_output}")
+
     # Create a visualizable PDB file
     binding_sites = [
         (row['chain_id'], int(row['residue_id']))
         for _, row in features_df.iterrows() if row['prediction'] == 1
     ]
     output_pdb_file = os.path.join(output_dir, f"{pdb_id}_visualization.pdb")
-    #create_visualization_pdb(pdb_file, binding_sites, output_pdb_file)
+    create_visualization_pdb(pdb_file, binding_sites, output_pdb_file)
 
-    return results_df
-    #visualization in PyMOL: spectrum b, blue_white_red, minimum=0, maximum=1
-    #Binding sites red, non-binding sites blue
-    #In Chimera:
-    #Go to Tools > Depiction > Render by Attribute.
-    #Select B-factor as the attribute to render.
+    return binding_sites_df
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Improved binding site prediction pipeline")
