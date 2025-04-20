@@ -1,24 +1,30 @@
 #!/usr/bin/env python3
-import os
-import argparse
-import pandas as pd
-import glob
-from collections import defaultdict
-import joblib
-import numpy as np
-import tempfile
-import shutil
-import multiprocessing as mp
-import logging
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, RandomizedSearchCV, StratifiedGroupKFold, GroupShuffleSplit
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, precision_score, recall_score, f1_score
-from pdb_feature_extraction import process_directory, label_binding_sites, extract_features
-from imblearn.pipeline import Pipeline as ImbPipeline
-from sklearn.preprocessing import StandardScaler
-from imblearn.over_sampling import SMOTE
-from pocket_detection import get_geometry_features, integrate_geometry_with_ml_features
-from tqdm import tqdm
+try:
+    import os
+    import argparse
+    import pandas as pd
+    import glob
+    from collections import defaultdict
+    import joblib
+    import numpy as np
+    import tempfile
+    import shutil
+    import multiprocessing as mp
+    import logging
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import cross_val_score, RandomizedSearchCV, StratifiedGroupKFold, GroupShuffleSplit
+    from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, precision_score, recall_score, f1_score
+    from pdb_feature_extraction import process_directory, label_binding_sites, extract_features
+    from imblearn.pipeline import Pipeline as ImbPipeline
+    from sklearn.preprocessing import StandardScaler
+    from imblearn.over_sampling import SMOTE
+    from pocket_detection import get_geometry_features, integrate_geometry_with_ml_features
+    from tqdm import tqdm
+
+except ImportError as e:
+    print(f"Error importing libraries: {e}")
+    print("Please ensure all required libraries are installed.")
+    raise
 
 # Set up logging
 logger = logging.getLogger(__name__)

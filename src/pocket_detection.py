@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-
-import os
-import numpy as np
-from scipy.spatial import Delaunay, ConvexHull, cKDTree
-from Bio.PDB import PDBParser, Selection, NeighborSearch
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from skimage import measure
-from sklearn.cluster import DBSCAN
-import pandas as pd
-from tqdm import tqdm
-import warnings
-
+try:
+    import os
+    import numpy as np
+    from scipy.spatial import Delaunay, ConvexHull, cKDTree
+    from Bio.PDB import PDBParser, NeighborSearch
+    from skimage import measure
+    from sklearn.cluster import DBSCAN
+    import pandas as pd
+    from tqdm import tqdm
+    import warnings
+    
+except ImportError as e:
+    print(f"Error importing libraries: {e}")
+    print("Please ensure all required libraries are installed.")
+    raise
 class GeometryBasedPocketFinder:
     """
     A class to identify potential binding pockets using geometric approaches.
