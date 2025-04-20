@@ -411,7 +411,7 @@ The modular design and comprehensive documentation make the program accessible f
 6. Bonetta, R., \& Valentino, G. (2020). Machine learning techniques for protein function prediction. Proteins: Structure, Function, and Bioinformatics, 88(3), 397-413.
 7. Klys, J. et al. (2020). Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction via deep learning. Nature Communications[^3].
 8. Wang Y. et al. (2021). Fragmented blind docking: a novel protein–ligand binding prediction protocol. Journal of Computer-Aided Molecular Design[^5].
-9. Khater, S. et al. (2023). Prediction of protein–ligand binding affinity via deep learning models. Briefings in Bioinformatics[^13][^15].
+9. Khater, S. et al. (2023). Prediction of protein–ligand binding affinity via deep learning models. Briefings in Bioinformatics[^9].
 
 <div style="text-align: center">⁂</div>
 
@@ -431,27 +431,15 @@ The modular design and comprehensive documentation make the program accessible f
 
 [^8]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2700099/
 
-[^9]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10426331/
+[^9]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10939342/
 
-[^10]: https://www.semanticscholar.org/paper/af81feb57cde68819f0788b84eebfcd33224cdbf
 
-[^11]: https://www.semanticscholar.org/paper/e0e1e1c7a08ba3aa76bbf60d6c1972ec9bf8e6d2
 
-[^12]: https://www.semanticscholar.org/paper/e0a5c532c78a7d0ce442236487907cb7f78e746d
 
-[^13]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10939342/
 
-[^14]: https://pubmed.ncbi.nlm.nih.gov/32263351/
 
-[^15]: https://pubmed.ncbi.nlm.nih.gov/37319418/
 
-[^16]: https://www.semanticscholar.org/paper/fa1df089815e819543a5f8bd7692766528a82017
 
-[^17]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9900214/
 
-[^18]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10243863/
 
-[^19]: https://pubmed.ncbi.nlm.nih.gov/12825796/
-
-[^20]: https://www.semanticscholar.org/paper/eccae8a9e78a08614d851bce6d527fa74dd7537f
 
