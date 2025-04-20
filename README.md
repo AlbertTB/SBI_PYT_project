@@ -13,7 +13,7 @@ The program is organized into three primary Python modules, each with distinct r
 - Alpha-shape detection for surface analysis
 - 3D grid-based cavity identification
 - Surface curvature and concavity analysis
-- Pocket property calculation and scoring[^1]
+- Pocket property calculation and scoring
 
 **pdb_feature_extraction.py**: Focuses on extracting physicochemical and structural features from protein structures at the residue level, including:
 
@@ -21,14 +21,14 @@ The program is organized into three primary Python modules, each with distinct r
 - Secondary structure information via DSSP
 - Solvent accessibility measurements
 - Local environment characteristics
-- Residue depth calculations[^3]
+- Residue depth calculations
 
 **main.py**: Serves as the orchestrator for the entire prediction pipeline, providing functionality for:
 
 - Dataset preparation and feature enrichment
 - Machine learning model training with cross-validation
 - Prediction execution on new protein structures
-- Visualization generation for identified binding sites[^2]
+- Visualization generation for identified binding sites
 
 
 ## Workflow of the Program
@@ -73,15 +73,15 @@ def analyze_protein(self, pdb_file, output_dir=None):
 
 #### Alpha Shape Detection
 
-This method delineates the protein surface by constructing Delaunay triangulation of atom coordinates and identifying surface simplices based on circumradius criteria[^1][^10]. This approach is inspired by established pocket detection tools like Fpocket[^11].
+This method delineates the protein surface by constructing Delaunay triangulation of atom coordinates and identifying surface simplices based on circumradius criteria[^7]. This approach is inspired by established pocket detection tools like Fpocket[^8].
 
 #### Grid-Based Pocket Detection
 
-The program creates a 3D grid surrounding the protein and marks grid points as occupied (inside protein) or unoccupied (potential pocket) based on their distance to the nearest atom. Connected components of unoccupied space surrounded by protein are identified as potential binding cavities[^1].
+The program creates a 3D grid surrounding the protein and marks grid points as occupied (inside protein) or unoccupied (potential pocket) based on their distance to the nearest atom. Connected components of unoccupied space surrounded by protein are identified as potential binding cavities.
 
 #### Surface Concavity Analysis
 
-Surface atoms are analyzed for local curvature, and concave regions (low curvature values) are clustered using DBSCAN to identify distinct binding pockets[^1][^5].
+Surface atoms are analyzed for local curvature, and concave regions (low curvature values) are clustered using DBSCAN to identify distinct binding pockets[^2].
 
 ### 2. Feature Extraction
 
@@ -127,7 +127,7 @@ The program extracts the following key feature categories:
 - Hydrophobicity using the Kyte \& Doolittle scale
 - Residue volume in cubic Angstroms
 - Charge states at physiological pH
-- Hydrogen bond donor and acceptor capacities[^3]
+- Hydrogen bond donor and acceptor capacities
 
 
 #### Structural Features
@@ -136,7 +136,7 @@ The program extracts the following key feature categories:
 - Relative solvent accessibility
 - Phi and Psi backbone angles
 - Half-sphere exposure measurements
-- Residue depth calculations[^3][^6]
+- Residue depth calculations[^3]
 
 
 #### Local Environment Analysis
@@ -144,7 +144,7 @@ The program extracts the following key feature categories:
 - Neighbor counts within defined radius
 - Charged residue distribution
 - Atom density
-- Electrostatic environment[^3]
+- Electrostatic environment
 
 
 ### 3. Feature Engineering and Model Training
@@ -178,7 +178,7 @@ The program employs a sophisticated machine learning pipeline with:
 - StandardScaler for feature normalization
 - SMOTE oversampling to address class imbalance
 - RandomForestClassifier as the core prediction model
-- Cross-validation using StratifiedGroupKFold to ensure robust evaluation[^2][^14]
+- Cross-validation using StratifiedGroupKFold to ensure robust evaluation[^11]
 
 
 ### 4. Prediction and Visualization
@@ -212,7 +212,7 @@ The program generates:
 
 - Modified PDB files highlighting predicted binding sites
 - PyMOL scripts for interactive visualization
-- CSV files containing detailed prediction results[^2]
+- CSV files containing detailed prediction results
 
 
 ## Theoretical Foundations
@@ -221,7 +221,7 @@ The program generates:
 
 #### Alpha Shape Theory
 
-Alpha shapes provide a formal mathematical framework for defining the shape of a set of points in 3D space. In the context of proteins, alpha shapes help identify the boundary between the protein interior and exterior, highlighting pockets and cavities[^5][^11].
+Alpha shapes provide a formal mathematical framework for defining the shape of a set of points in 3D space. In the context of proteins, alpha shapes help identify the boundary between the protein interior and exterior, highlighting pockets and cavities[^2][^8].
 
 The program implements alpha shape detection using the Delaunay triangulation of atom coordinates with filtering based on a probe radius (typically representing water molecules):
 
@@ -244,13 +244,13 @@ def _identify_surface_atoms(self, atoms):
         return [atoms[i] for i in surface_indices], hull.simplices
 ```
 
-As noted by Schmidtke et al. in their work on Fpocket, this approach allows for efficient detection of potential binding sites on protein surfaces[^11].
+As noted by Schmidtke et al. in their work on Fpocket, this approach allows for efficient detection of potential binding sites on protein surfaces[^8].
 
 #### Grid-Based Pocket Detection
 
-The grid-based approach discretizes the 3D space around a protein into voxels and classifies them as inside/outside the protein based on distance thresholds. This method, similar to approaches used in computational geometry and computer graphics, enables the identification of enclosed cavities that might serve as binding sites[^1][^5].
+The grid-based approach discretizes the 3D space around a protein into voxels and classifies them as inside/outside the protein based on distance thresholds. This method, similar to approaches used in computational geometry and computer graphics, enables the identification of enclosed cavities that might serve as binding sites[^2].
 
-As demonstrated in the Pocket to Concavity (P2C) tool by Kudo et al., grid-based pocket detection is particularly effective for refining the shapes of predicted pockets to match the actual volume of bound ligands[^5].
+As demonstrated in the Pocket to Concavity (P2C) tool by Kudo et al., grid-based pocket detection is particularly effective for refining the shapes of predicted pockets to match the actual volume of bound ligands[^2].
 
 #### Surface Curvature Analysis
 
@@ -267,13 +267,13 @@ normal = eigenvectors[:, 0]
 curvature = eigenvalues[^0] / (np.sum(eigenvalues) + 1e-10)
 ```
 
-This approach is supported by research showing that binding sites typically exhibit high concavity compared to the rest of the protein surface[^1][^5].
+This approach is supported by research showing that binding sites typically exhibit high concavity compared to the rest of the protein surface[^2].
 
 ### Biochemical and Biophysical Foundations
 
 #### Hydrophobicity and Binding Site Formation
 
-Hydrophobic interactions are often the primary driving force in protein-ligand binding. The program incorporates the Kyte \& Doolittle hydrophobicity scale to characterize residues and evaluate their potential contribution to binding sites[^3]. Research by Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction has demonstrated that the balance between hydrophobicity and hydration plays a crucial role in binding affinity[^6].
+Hydrophobic interactions are often the primary driving force in protein-ligand binding. The program incorporates the Kyte \& Doolittle hydrophobicity scale to characterize residues and evaluate their potential contribution to binding sites. Research by Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction has demonstrated that the balance between hydrophobicity and hydration plays a crucial role in binding affinity[^3].
 
 #### Solvent Accessibility and Binding Site Prediction
 
@@ -285,10 +285,10 @@ if dssp and dssp_key in dssp:
     # DSSP provides: secondary structure, relative ASA, phi, psi angles, etc.
     dssp_data = dssp[dssp_key]
     # Relative ASA (index 3)
-    res_features['rel_asa'] = float(dssp_data[^3])
+    res_features['rel_asa'] = float(dssp_data)
 ```
 
-The importance of solvent accessibility in binding site prediction is supported by numerous studies, including those on free energy calculations for protein-ligand binding prediction[^10].
+The importance of solvent accessibility in binding site prediction is supported by numerous studies, including those on free energy calculations for protein-ligand binding prediction[^7].
 
 #### Electrostatic Interactions and Complementarity
 
@@ -300,7 +300,7 @@ res_features['neg_charged_neighbors'] = neg_charged
 res_features['net_charge_environment'] = pos_charged - neg_charged
 ```
 
-This analysis is crucial for detecting binding sites that involve charged or polar ligands, as demonstrated in studies on protein-ligand binding affinity prediction using deep learning models[^16][^18].
+This analysis is crucial for detecting binding sites that involve charged or polar ligands, as demonstrated in studies on protein-ligand binding affinity prediction using deep learning models[^13][^15].
 
 ### Machine Learning Principles
 
@@ -325,7 +325,7 @@ pipeline = ImbPipeline([
 ])
 ```
 
-The effectiveness of Random Forest for binding site prediction is supported by multiple studies, including work by Deep Protein-Ligand Binding Prediction Using Unsupervised Learned Representations[^14].
+The effectiveness of Random Forest for binding site prediction is supported by multiple studies, including work by Deep Protein-Ligand Binding Prediction Using Unsupervised Learned Representations[^11].
 
 #### Feature Importance Analysis
 
@@ -338,7 +338,7 @@ feature_importances = pd.DataFrame({
 }).sort_values(by='Importance', ascending=False)
 ```
 
-This analysis helps understand the biochemical and structural determinants of ligand binding, aligning with findings from studies on protein-ligand binding affinity prediction via deep learning models[^16].
+This analysis helps understand the biochemical and structural determinants of ligand binding, aligning with findings from studies on protein-ligand binding affinity prediction via deep learning models[^13].
 
 #### Handling Class Imbalance with SMOTE
 
@@ -348,7 +348,7 @@ Binding site prediction typically involves highly imbalanced datasets, as bindin
 ('smote', SMOTE(random_state=random_state, sampling_strategy=0.5))
 ```
 
-This approach creates synthetic examples of the minority class (binding residues) to balance the dataset, improving model performance as demonstrated in recent machine learning approaches for binding site prediction[^2][^14].
+This approach creates synthetic examples of the minority class (binding residues) to balance the dataset, improving model performance as demonstrated in recent machine learning approaches for binding site prediction[^11].
 
 ## Python Implementation Considerations
 
@@ -403,61 +403,55 @@ The modular design and comprehensive documentation make the program accessible f
 
 ## References
 
-1. Schmidtke, P., Le Guilloux, V., Maupetit, J., and Tuffery, P. (2009). Fpocket: An open source platform for ligand pocket detection. BMC Bioinformatics[^11].
-2. Kudo, G. et al. (2023). Pocket to Concavity (P2C): A tool for the refinement of protein binding pocket shape. Available at: https://github.com/genki-kudo/Pocket-to-Concavity[^5].
+1. Schmidtke, P., Le Guilloux, V., Maupetit, J., and Tuffery, P. (2009). Fpocket: An open source platform for ligand pocket detection. BMC Bioinformatics[^8].
+2. Kudo, G. et al. (2023). Pocket to Concavity (P2C): A tool for the refinement of protein binding pocket shape. Available at: https://github.com/genki-kudo/Pocket-to-Concavity[^2].
 3. Ahmad, S., Gromiha, M. M., \& Sarai, A. (2004). Analysis and prediction of DNA-binding proteins and their binding residues based on composition, sequence and structural information. Bioinformatics, 20(4), 477-486.
-4. Stärk, H. et al. (2022). EQUIBIND: A geometric deep learning-based protein-ligand binding prediction method. Nature Methods[^4].
+4. Stärk, H. et al. (2022). EQUIBIND: A geometric deep learning-based protein-ligand binding prediction method. Nature Methods[^1].
 5. Jiménez, J. et al. (2018). DeepSite: protein-binding site predictor using 3D-convolutional neural networks. Bioinformatics.
 6. Bonetta, R., \& Valentino, G. (2020). Machine learning techniques for protein function prediction. Proteins: Structure, Function, and Bioinformatics, 88(3), 397-413.
-7. Klys, J. et al. (2020). Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction via deep learning. Nature Communications[^6].
-8. Wang Y. et al. (2021). Fragmented blind docking: a novel protein–ligand binding prediction protocol. Journal of Computer-Aided Molecular Design[^8].
-9. Khater, S. et al. (2023). Prediction of protein–ligand binding affinity via deep learning models. Briefings in Bioinformatics[^16][^18].
+7. Klys, J. et al. (2020). Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction via deep learning. Nature Communications[^3].
+8. Wang Y. et al. (2021). Fragmented blind docking: a novel protein–ligand binding prediction protocol. Journal of Computer-Aided Molecular Design[^5].
+9. Khater, S. et al. (2023). Prediction of protein–ligand binding affinity via deep learning models. Briefings in Bioinformatics[^13][^15].
 
 <div style="text-align: center">⁂</div>
 
-[^1]: https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/57282983/1442cae2-be03-4792-8cae-736f224babad/pocket_detection.py
+[^1]: https://pubmed.ncbi.nlm.nih.gov/37766553/
 
-[^2]: https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/57282983/9667d4c3-3922-4d4d-a548-babf7ddb1cd6/main.py
+[^2]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10148677/
 
-[^3]: https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/57282983/795c4c71-ad23-429b-9b37-88017b0cc6ee/pdb_feature_extraction.py
+[^3]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9814895/
 
-[^4]: https://pubmed.ncbi.nlm.nih.gov/37766553/
+[^4]: https://pubmed.ncbi.nlm.nih.gov/38502477/
 
-[^5]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10148677/
+[^5]: https://pubmed.ncbi.nlm.nih.gov/34641761/
 
-[^6]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9814895/
+[^6]: https://www.semanticscholar.org/paper/e070346de8dd6d0240634e968022e656cebfa3fa
 
-[^7]: https://pubmed.ncbi.nlm.nih.gov/38502477/
+[^7]: https://pubmed.ncbi.nlm.nih.gov/33759129/
 
-[^8]: https://pubmed.ncbi.nlm.nih.gov/34641761/
+[^8]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2700099/
 
-[^9]: https://www.semanticscholar.org/paper/e070346de8dd6d0240634e968022e656cebfa3fa
+[^9]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10426331/
 
-[^10]: https://pubmed.ncbi.nlm.nih.gov/33759129/
+[^10]: https://www.semanticscholar.org/paper/af81feb57cde68819f0788b84eebfcd33224cdbf
 
-[^11]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2700099/
+[^11]: https://www.semanticscholar.org/paper/e0e1e1c7a08ba3aa76bbf60d6c1972ec9bf8e6d2
 
-[^12]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10426331/
+[^12]: https://www.semanticscholar.org/paper/e0a5c532c78a7d0ce442236487907cb7f78e746d
 
-[^13]: https://www.semanticscholar.org/paper/af81feb57cde68819f0788b84eebfcd33224cdbf
+[^13]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10939342/
 
-[^14]: https://www.semanticscholar.org/paper/e0e1e1c7a08ba3aa76bbf60d6c1972ec9bf8e6d2
+[^14]: https://pubmed.ncbi.nlm.nih.gov/32263351/
 
-[^15]: https://www.semanticscholar.org/paper/e0a5c532c78a7d0ce442236487907cb7f78e746d
+[^15]: https://pubmed.ncbi.nlm.nih.gov/37319418/
 
-[^16]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10939342/
+[^16]: https://www.semanticscholar.org/paper/fa1df089815e819543a5f8bd7692766528a82017
 
-[^17]: https://pubmed.ncbi.nlm.nih.gov/32263351/
+[^17]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9900214/
 
-[^18]: https://pubmed.ncbi.nlm.nih.gov/37319418/
+[^18]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10243863/
 
-[^19]: https://www.semanticscholar.org/paper/fa1df089815e819543a5f8bd7692766528a82017
+[^19]: https://pubmed.ncbi.nlm.nih.gov/12825796/
 
-[^20]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9900214/
-
-[^21]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10243863/
-
-[^22]: https://pubmed.ncbi.nlm.nih.gov/12825796/
-
-[^23]: https://www.semanticscholar.org/paper/eccae8a9e78a08614d851bce6d527fa74dd7537f
+[^20]: https://www.semanticscholar.org/paper/eccae8a9e78a08614d851bce6d527fa74dd7537f
 
