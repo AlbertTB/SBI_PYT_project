@@ -326,7 +326,7 @@ def engineer_additional_features(df):
     return df_new
 
 def train_optimized_model(features_file, output_model="binding_site_model.pkl", cv_folds=5, 
-                          nested_cv=True, test_size=0.2, random_state=42):
+                          nested_cv=False, test_size=0.2, random_state=42):
     """
     Train an optimized model on the labeled dataset with SMOTE oversampling
     and proper cross-validation.
@@ -436,7 +436,7 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
             
             # Evaluate on validation set
             y_prob = pipeline.predict_proba(X_val)[:, 1]
-            y_pred = (y_prob >= 0.4).astype(int)
+            y_pred = (y_prob >= 0.42).astype(int)
             
             
             # Calculate metrics
@@ -510,7 +510,7 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
             
             # Evaluate on test set
             y_prob = pipeline.predict_proba(X_test)[:, 1]
-            y_pred = (y_prob >= 0.4).astype(int)
+            y_pred = (y_prob >= 0.42).astype(int)
             
             # Store predictions for overall metrics
             all_true.extend(y_test)
@@ -626,7 +626,7 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
 
     # Make predictions
     probabilities = rf.predict_proba(X)[:, 1]
-    predictions = (probabilities >= 0.4).astype(int)
+    predictions = (probabilities >= 0.42).astype(int)
     
 
     # Add predictions to the DataFrame
