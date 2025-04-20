@@ -405,25 +405,13 @@ The modular design and comprehensive documentation make the program accessible f
 
 1. Schmidtke, P., Le Guilloux, V., Maupetit, J., and Tuffery, P. (2009). Fpocket: An open source platform for ligand pocket detection. BMC Bioinformatics[^8].
 2. Kudo, G. et al. (2023). Pocket to Concavity (P2C): A tool for the refinement of protein binding pocket shape. Available at: https://github.com/genki-kudo/Pocket-to-Concavity[^2].
-3. Ahmad, S., Gromiha, M. M., & Sarai, A. (2004). Analysis and prediction of DNA-binding proteins and their binding residues based on composition, sequence and structural information. Bioinformatics, 20(4), 477-486.
+3. Ahmad, S., Gromiha, M. M., \& Sarai, A. (2004). Analysis and prediction of DNA-binding proteins and their binding residues based on composition, sequence and structural information. Bioinformatics, 20(4), 477-486.
 4. Stärk, H. et al. (2022). EQUIBIND: A geometric deep learning-based protein-ligand binding prediction method. Nature Methods[^1].
 5. Jiménez, J. et al. (2018). DeepSite: protein-binding site predictor using 3D-convolutional neural networks. Bioinformatics.
-6. Bonetta, R., & Valentino, G. (2020). Machine learning techniques for protein function prediction. Proteins: Structure, Function, and Bioinformatics, 88(3), 397-413.
+6. Bonetta, R., \& Valentino, G. (2020). Machine learning techniques for protein function prediction. Proteins: Structure, Function, and Bioinformatics, 88(3), 397-413.
 7. Klys, J. et al. (2020). Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction via deep learning. Nature Communications[^3].
 8. Wang Y. et al. (2021). Fragmented blind docking: a novel protein–ligand binding prediction protocol. Journal of Computer-Aided Molecular Design[^5].
 9. Khater, S. et al. (2023). Prediction of protein–ligand binding affinity via deep learning models. Briefings in Bioinformatics[^13][^15].
-10. Zhang, C. et al. (2020). Statistical depth function for defining negative samples in ligand binding site prediction. bioRxiv[^10].
-11. Wang, S. et al. (2021). Deep protein-ligand binding prediction using unsupervised learned representations. bioRxiv[^11].
-12. Li, H. et al. (2022). Ensemble methods for protein-ligand binding site prediction. bioRxiv[^12].
-13. Chen, X. et al. (2023). Deep learning approaches for binding affinity prediction. Briefings in Bioinformatics[^13].
-14. Patel, A. et al. (2020). Hydrogen bonding patterns in protein-ligand interactions. J. Mol. Biol.[^14].
-15. Singh, R. et al. (2023). Charge complementarity in binding site prediction. Briefings in Bioinformatics[^15].
-16. Müller, K. et al. (2021). Solvent dynamics in ligand binding. bioRxiv[^16].
-17. Kim, J. et al. (2023). Conformational changes in protein-ligand complexes. J. Chem. Inf. Model.[^17].
-18. Lee, S. et al. (2023). Benchmarking datasets for binding site prediction. Nucleic Acids Research[^18].
-19. Brown, D. et al. (2003). Allosteric binding site detection methods. Bioinformatics[^19].
-20. Garcia, M. et al. (2022). Open source tools for computational drug discovery. bioRxiv[^20].
-
 
 <div style="text-align: center">⁂</div>
 
