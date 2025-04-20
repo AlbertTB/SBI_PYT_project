@@ -1,8 +1,3 @@
-<img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" class="logo" width="120"/>
-
-# modify the README i attach just deleting the references to my scripts, including the references and the links to them for the bibliography
-
-Here's the modified README with script references removed and academic references maintained:
 
 ```markdown
 # Ligand Binding Site Prediction Program Documentation
