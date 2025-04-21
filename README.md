@@ -61,7 +61,7 @@ DSSP>=3.0.0  # If using the standalone DSSP binary
 
 `multiprocessing>=0.70.12`
 
-**To install this labrires use:**
+**To install this libraries use:**
 
 ``` pip install -r requirements.txt ```
 
