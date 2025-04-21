@@ -13,9 +13,7 @@ biopython>=1.79
 DSSP>=3.0.0  # If using the standalone DSSP binary
 
 # Visualization libraries
-matplotlib>=3.4.0
 scikit-image>=0.18.0
-seaborn>=0.11.0
 
 # Progress tracking
 tqdm>=4.61.0
