@@ -1,136 +1,3 @@
-# Tutorial for Predicting binding sites
-
-## Requirements
-
-### External programs
-
-**IMPORTANT NOTE**: DSSP and MSMS need to be installed in order to get good prediction results.
-
-DSSP:
-```
-sudo apt install dssp
-mkdssp --version            #To test it
-```
-
-[MSMS](https://ccsb.scripps.edu/msms/downloads/): 
-
-- Unpack it 
-```
-tar -xvzf msms.tar.gz
-```
-
-- Move binary to somewhere on your PATH 
-```
-sudo mv msms /usr/local/bin/
-chmod +x /usr/local/bin/msms
-```
-**MAKE SURE THE NAME OF THE BINARY IS `msms`** (change name of binary if necessary)
-
-### Libraries
-- Core libraries:
-```
-numpy>=1.20.0
-
-pandas>=1.3.0
-
-scipy>=1.7.0
-```
-- Machine learning libraries:
-```
-scikit-learn>=0.24.0
-
-imbalanced-learn>=0.8.0
-
-joblib>=1.0.0
-```
-- Bioinformatics libraries:
-```
-biopython>=1.79
-
-DSSP>=3.0.0  # If using the standalone DSSP binary
-```
-- Visualization libraries:
-
-`scikit-image>=0.18.0`
-
-- Progress tracking:
-
-`tqdm>=4.61.0`
-
-- Other utilities:
-
-`multiprocessing>=0.70.12`
-
-**To install this libraries use:**
-
-``` pip install -r requirements.txt ```
-
-### Additional requirements
-
-Example of folder structure for ease of use (just for predicting binding sites, if you want to re-train the model see [Tutorial for training prediction model](#tutorial-for-training-prediction-model):
-
-```
-your_project/
-├── predict_pdbs/          # PDB files that will be predicted
-├── predictions_output/    # Auto-created: predictions for new inputs
-├── models/                # Trained models
-├── src/                   # Directory with the three main scripts (main, pcoket_detection and feature_extraction)
-```
-## Predict binding sites
-Run the following command (**Only one protein can be predicted at a time**):
-
-```
-python src/main.py predict --pdb_file predict_pdbs/new_protein.pdb --model_file models/name_of_model --output_dir predictions/ --log_file path/to/log_file.log (optional)
-```
-This will generate:
-
-- A `.csv` file with prediction for all residues
-
-- A `.csv` file with only the predicterd binding residues
-
-- An annotated PDB file (optionally used for PyMOL or Chimera visualization)
-
-## Test data
-
-In the repository the folder named `test/` contains 4 proteins that can be used for testing the model. Their predictions are already located in the `predictions/` folder if you just want to visualise the results.
-
-If you wish to test the model run the same command as before but instead of using the `predict_pdbs/` folder use the `test/` folder
-
-# Tutorial for training prediction model
-
-**Note**: Requirements are the same as in [Tutorial for Predicting Binding sites](#requirements) but the folder structure needs to be the following:
-
-```
-your_project/
-├── predict_pdbs/          # PDB files that will be predicted
-├── predictions_output/    # Auto-created: predictions for new inputs
-├── models/                # Trained models
-├── src/                   # Directory with the three main scripts (main, pcoket_detection and feature_extraction)
-├── train_data/            
-    ├── protein/           # Contains the PDB files used to train the model
-    ├── label/             # Contains CSVs with the class of each residue of each protein
-├── labeled_features/      # Auto-created: CSVs with the features of the train_data
-```
-
-## First step: Feature extraction
-
-This will extract geometric, structural adn physicochemical features for each protein and will label each residue.
-
-Run the following command:
-```
-python src/main.py --process --pdb_dir train_data/protein --prediction_dir train_data/label --output_dir labeled_features/ (optional) --log_file path/to/log_file.log (optional)
-```
-
-This step may take a long time depending on the ammount of PDB files that need to be processed.
-
-## Second step: Model training
-
-To train a Random Forest model run the following command:
-```
-python src/main.py train --features_file labeled_features/combined_labeled_features.csv --output_model models/name_of_model (optional) --nested_cv (optional) --log_file path/to/log_file.log (optional)
-```
-Note that by default the model will be saved in the current directory
-
 # Ligand Binding Site Prediction Program Documentation
 
 This detailed report provides a comprehensive analysis of the ligand binding site prediction program, including its structure, algorithmic workflow, and the theoretical principles that underpin its functionality. The program combines geometric approaches with machine learning techniques to identify potential binding sites on protein structures with high accuracy.
@@ -206,15 +73,15 @@ def analyze_protein(self, pdb_file, output_dir=None):
 
 #### Alpha Shape Detection
 
-This method delineates the protein surface by constructing Delaunay triangulation of atom coordinates and identifying surface simplices based on circumradius criteria[^7]. This approach is inspired by established pocket detection tools like Fpocket[^8].
+This method delineates the protein surface by constructing Delaunay triangulation of atom coordinates and identifying surface simplices based on circumradius criteria[^1]. This approach is inspired by established pocket detection tools like Fpocket[^2].
 
 #### Grid-Based Pocket Detection
 
-The program creates a 3D grid surrounding the protein and marks grid points as occupied (inside protein) or unoccupied (potential pocket) based on their distance to the nearest atom. Connected components of unoccupied space surrounded by protein are identified as potential binding cavities.
+The program creates a 3D grid surrounding the protein and marks grid points as occupied (inside protein) or unoccupied (potential pocket) based on their distance to the nearest atom. Connected components of unoccupied space surrounded by protein are identified as potential binding cavities[^3].
 
 #### Surface Concavity Analysis
 
-Surface atoms are analyzed for local curvature, and concave regions (low curvature values) are clustered using DBSCAN to identify distinct binding pockets[^2].
+Surface atoms are analyzed for local curvature, and concave regions (low curvature values) are clustered using DBSCAN to identify distinct binding pockets [^4].
 
 ### 2. Feature Extraction
 
@@ -267,19 +134,19 @@ The program extracts the following key feature categories:
 
 #### Physicochemical Properties
 
-- Hydrophobicity using the Kyte \& Doolittle scale
+- Hydrophobicity using the Kyte \& Doolittle scale[^5]
 - Residue volume in cubic Angstroms
 - Charge states at physiological pH
-- Hydrogen bond donor and acceptor capacities
+- Hydrogen bond donor and acceptor capacities[^6]
 
 
 #### Structural Features
 
-- Secondary structure classification from DSSP
+- Secondary structure classification from DSSP[^7]
 - Relative solvent accessibility
 - Phi and Psi backbone angles
 - Half-sphere exposure measurements
-- Residue depth calculations[^3]
+- Residue depth calculations[^8]
 
 
 #### Local Environment Analysis
@@ -287,7 +154,7 @@ The program extracts the following key feature categories:
 - Neighbor counts within defined radius
 - Charged residue distribution
 - Atom density
-- Electrostatic environment
+- Electrostatic environment[^6]
 
 
 ### 3. Feature Engineering and Model Training
@@ -321,7 +188,7 @@ The program employs a sophisticated machine learning pipeline with:
 - StandardScaler for feature normalization
 - SMOTE oversampling to address class imbalance
 - RandomForestClassifier as the core prediction model
-- Cross-validation using StratifiedGroupKFold to ensure robust evaluation[^11]
+- Cross-validation using StratifiedGroupKFold to ensure robust evaluation[^9]
 
 
 ### 4. Prediction and Visualization
@@ -365,7 +232,7 @@ The program generates:
 
 #### Alpha Shape Theory
 
-Alpha shapes provide a formal mathematical framework for defining the shape of a set of points in 3D space. In the context of proteins, alpha shapes help identify the boundary between the protein interior and exterior, highlighting pockets and cavities[^2][^8].
+Alpha shapes provide a formal mathematical framework for defining the shape of a set of points in 3D space. In the context of proteins, alpha shapes help identify the boundary between the protein interior and exterior, highlighting pockets and cavities.
 
 The program implements alpha shape detection using the Delaunay triangulation of atom coordinates with filtering based on a probe radius (typically representing water molecules):
 
@@ -388,17 +255,17 @@ def _identify_surface_atoms(self, atoms):
         return [atoms[i] for i in surface_indices], hull.simplices
 ```
 
-As noted by Schmidtke et al. in their work on Fpocket, this approach allows for efficient detection of potential binding sites on protein surfaces[^8].
+As noted by Schmidtke et al. in their work on Fpocket, this approach allows for efficient detection of potential binding sites on protein surfaces[^2].
 
 #### Grid-Based Pocket Detection
 
-The grid-based approach discretizes the 3D space around a protein into voxels and classifies them as inside/outside the protein based on distance thresholds. This method, similar to approaches used in computational geometry and computer graphics, enables the identification of enclosed cavities that might serve as binding sites[^2].
+The grid-based approach discretizes the 3D space around a protein into voxels and classifies them as inside/outside the protein based on distance thresholds. This method, similar to approaches used in computational geometry and computer graphics, enables the identification of enclosed cavities that might serve as binding sites[^3].
 
-As demonstrated in the Pocket to Concavity (P2C) tool by Kudo et al., grid-based pocket detection is particularly effective for refining the shapes of predicted pockets to match the actual volume of bound ligands[^2].
+As demonstrated in the Pocket to Concavity (P2C) tool by Kudo et al., grid-based pocket detection is particularly effective for refining the shapes of predicted pockets to match the actual volume of bound ligands[^10].
 
 #### Surface Curvature Analysis
 
-Surface curvature analysis examines the local geometry of protein surfaces to identify concave regions that often correspond to binding sites. The program calculates local curvature using eigendecomposition of covariance matrices of surface neighborhoods:
+Surface curvature analysis examines the local geometry of protein surfaces to identify concave regions that often correspond to binding sites. The program calculates local curvature using eigendecomposition of covariance matrices of surface neighborhoods[^4]:
 
 ```python
 # Calculate covariance matrix
@@ -417,11 +284,11 @@ This approach is supported by research showing that binding sites typically exhi
 
 #### Hydrophobicity and Binding Site Formation
 
-Hydrophobic interactions are often the primary driving force in protein-ligand binding. The program incorporates the Kyte \& Doolittle hydrophobicity scale to characterize residues and evaluate their potential contribution to binding sites. Research by Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction has demonstrated that the balance between hydrophobicity and hydration plays a crucial role in binding affinity[^3].
+Hydrophobic interactions are often the primary driving force in protein-ligand binding. The program incorporates the Kyte \& Doolittle hydrophobicity scale to characterize residues and evaluate their potential contribution to binding sites. Research by Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction has demonstrated that the balance between hydrophobicity and hydration plays a crucial role in binding affinity[^5].
 
 #### Solvent Accessibility and Binding Site Prediction
 
-Solvent accessibility, calculated using DSSP, provides information about residue exposure to solvent. Binding sites typically show a distinctive pattern of solvent accessibility compared to the rest of the protein:
+Solvent accessibility, calculated using DSSP, provides information about residue exposure to solvent. Binding sites typically show a distinctive pattern of solvent accessibility compared to the rest of the protein[^7]:
 
 ```python
 # From pdb_feature_extraction.py
@@ -432,7 +299,7 @@ if dssp and dssp_key in dssp:
     res_features['rel_asa'] = float(dssp_data)
 ```
 
-The importance of solvent accessibility in binding site prediction is supported by numerous studies, including those on free energy calculations for protein-ligand binding prediction[^7].
+The importance of solvent accessibility in binding site prediction is supported by numerous studies, including those on free energy calculations for protein-ligand binding prediction[^11].
 
 #### Electrostatic Interactions and Complementarity
 
@@ -444,7 +311,7 @@ res_features['neg_charged_neighbors'] = neg_charged
 res_features['net_charge_environment'] = pos_charged - neg_charged
 ```
 
-This analysis is crucial for detecting binding sites that involve charged or polar ligands, as demonstrated in studies on protein-ligand binding affinity prediction using deep learning models[^13][^15].
+This analysis is crucial for detecting binding sites that involve charged or polar ligands, as demonstrated in studies on protein-ligand binding affinity prediction using deep learning models[^12].
 
 ### Machine Learning Principles
 
@@ -469,7 +336,7 @@ pipeline = ImbPipeline([
 ])
 ```
 
-The effectiveness of Random Forest for binding site prediction is supported by multiple studies, including work by Deep Protein-Ligand Binding Prediction Using Unsupervised Learned Representations[^11].
+The effectiveness of Random Forest for binding site prediction is supported by multiple studies, including work by Deep Protein-Ligand Binding Prediction Using Unsupervised Learned Representations[^13].
 
 #### Feature Importance Analysis
 
@@ -482,7 +349,7 @@ feature_importances = pd.DataFrame({
 }).sort_values(by='Importance', ascending=False)
 ```
 
-This analysis helps understand the biochemical and structural determinants of ligand binding, aligning with findings from studies on protein-ligand binding affinity prediction via deep learning models[^13].
+This analysis helps understand the biochemical and structural determinants of ligand binding, aligning with findings from studies on protein-ligand binding affinity prediction via deep learning models.
 
 #### Handling Class Imbalance with SMOTE
 
@@ -492,7 +359,7 @@ Binding site prediction typically involves highly imbalanced datasets, as bindin
 ('smote', SMOTE(random_state=random_state, sampling_strategy=0.5))
 ```
 
-This approach creates synthetic examples of the minority class (binding residues) to balance the dataset, improving model performance as demonstrated in recent machine learning approaches for binding site prediction[^11].
+This approach creates synthetic examples of the minority class (binding residues) to balance the dataset, improving model performance as demonstrated in recent machine learning approaches for binding site prediction[^14].
 
 ## Python Implementation Considerations
 
@@ -547,35 +414,41 @@ The modular design and comprehensive documentation make the program accessible f
 
 ## References
 
-1. Schmidtke, P., Le Guilloux, V., Maupetit, J., and Tuffery, P. (2009). Fpocket: An open source platform for ligand pocket detection. BMC Bioinformatics[^8].
-2. Kudo, G. et al. (2023). Pocket to Concavity (P2C): A tool for the refinement of protein binding pocket shape. Available at: https://github.com/genki-kudo/Pocket-to-Concavity[^2].
-3. Ahmad, S., Gromiha, M. M., \& Sarai, A. (2004). Analysis and prediction of DNA-binding proteins and their binding residues based on composition, sequence and structural information. Bioinformatics, 20(4), 477-486.
-4. Stärk, H. et al. (2022). EQUIBIND: A geometric deep learning-based protein-ligand binding prediction method. Nature Methods[^1].
-5. Jiménez, J. et al. (2018). DeepSite: protein-binding site predictor using 3D-convolutional neural networks. Bioinformatics.
-6. Bonetta, R., \& Valentino, G. (2020). Machine learning techniques for protein function prediction. Proteins: Structure, Function, and Bioinformatics, 88(3), 397-413.
-7. Klys, J. et al. (2020). Elucidating the multiple roles of hydration for accurate protein-ligand binding prediction via deep learning. Nature Communications[^3].
-8. Wang Y. et al. (2021). Fragmented blind docking: a novel protein–ligand binding prediction protocol. Journal of Computer-Aided Molecular Design[^5].
-9. Khater, S. et al. (2023). Prediction of protein–ligand binding affinity via deep learning models. Briefings in Bioinformatics[^9].
-
 <div style="text-align: center">⁂</div>
 
-[^1]: https://pubmed.ncbi.nlm.nih.gov/37766553/
+[^1]: https://pubmed.ncbi.nlm.nih.gov/23193202/
 
-[^2]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10148677/
+[^2]: https://pmc.ncbi.nlm.nih.gov/articles/PMC2896101/
 
-[^3]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9814895/
+[^3]: https://pubmed.ncbi.nlm.nih.gov/37516103/
 
-[^4]: https://pubmed.ncbi.nlm.nih.gov/38502477/
+[^4]: https://pubmed.ncbi.nlm.nih.gov/30423105/
 
-[^5]: https://pubmed.ncbi.nlm.nih.gov/34641761/
+[^5]: https://pubmed.ncbi.nlm.nih.gov/10585500/
 
-[^6]: https://www.semanticscholar.org/paper/e070346de8dd6d0240634e968022e656cebfa3fa
+[^6]: https://www.biorxiv.org/content/10.1101/2024.10.07.616705v1
 
-[^7]: https://pubmed.ncbi.nlm.nih.gov/33759129/
+[^7]: https://www.biorxiv.org/content/10.1101/2025.04.11.648460v1
 
-[^8]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2700099/
+[^8]: https://pmc.ncbi.nlm.nih.gov/articles/PMC11641695/
 
-[^9]: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10939342/
+[^9]: https://pubmed.ncbi.nlm.nih.gov/34741515/ 
+
+[^10]: https://pubmed.ncbi.nlm.nih.gov/37086438/
+
+[^11]: https://pubmed.ncbi.nlm.nih.gov/33206520/
+
+[^12]: https://pubmed.ncbi.nlm.nih.gov/38529493/
+
+[^13]: https://pubmed.ncbi.nlm.nih.gov/29028926/
+
+[^14]: https://pubmed.ncbi.nlm.nih.gov/34322702/
+
+
+
+
+
+
 
 
 
