@@ -48,13 +48,13 @@ def analyze_protein(self, pdb_file, output_dir=None):
     # Parse PDB file
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure('protein', pdb_file)
-    model = structure[^0]
+    model = structure[0]
     
     # Extract protein atoms
     protein_atoms = []
     for chain in model:
         for residue in chain:
-            if residue.get_id()[^0] == ' ': # Standard amino acid
+            if residue.get_id()[0] == ' ': # Standard amino acid
                 for atom in residue:
                     if atom.element != 'H': # Exclude hydrogens
                         protein_atoms.append(atom)
@@ -62,7 +62,7 @@ def analyze_protein(self, pdb_file, output_dir=None):
     # Calculate surface using alpha shape
     surface_atoms, surface_vertices = self._identify_surface_atoms(protein_atoms)
     
-    # Detect pockets using both methods
+    # Detect pockets using both alpha-shape and grid-based methods
     grid_pockets = self._detect_pockets_grid_based(protein_atoms)
     concavity_pockets = self._detect_pockets_by_concavity(surface_atoms, protein_atoms)
     
@@ -95,8 +95,13 @@ def extract_features(pdb_file, output_dir="features"):
     """
     # Parse PDB file
     parser = PDBParser(QUIET=True, PERMISSIVE=True)
-    structure = parser.get_structure(pdb_id, pdb_file)
-    model = structure[^0]
+    pdb_id = os.path.basename(pdb_file).split('.')[0]
+    try:
+        structure = parser.get_structure(pdb_id, pdb_file)
+        model = structure[0]  # Get the first model
+    except Exception as e:
+        print(f"Error parsing {pdb_file}: {e}")
+        return pd.DataFrame()
     
     # Calculate DSSP once for all residues
     dssp = calculate_dssp(pdb_file, model)
@@ -105,7 +110,12 @@ def extract_features(pdb_file, output_dir="features"):
     rd = calculate_residue_depth(model)
     
     # Calculate HSE (half-sphere exposure)
-    hse = HSExposureCB(model)
+    hse = None
+    
+    try:
+        hse = HSExposureCB(model)
+    except Exception:
+        pass
     
     # Process each residue efficiently
     features = []
@@ -168,7 +178,7 @@ def engineer_additional_features(df):
     df_new['exposed_hydrophobic'] = df_new['hydrophobicity'] * df_new['rel_asa']
     df_new['exposed_charged'] = abs(df_new['charge']) * df_new['rel_asa']
     
-    # Many more engineered features...
+    # More engineered features...
     
     return df_new
 ```
@@ -197,10 +207,11 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
     features_df = integrate_geometry_with_ml_features(features_df, geometry_residue_df)
     features_df = engineer_additional_features(features_df)
     
-    # Load the model and make predictions
+    # Load the model 
     rf = joblib.load(model_file)
+    # Make predictions
     probabilities = rf.predict_proba(X)[:, 1]
-    predictions = (probabilities &gt;= 0.42).astype(int)
+    predictions = (probabilities >= 0.42).astype(int)
     
     # Create visualization file
     binding_sites = [(row['chain_id'], int(row['residue_id'])) 
@@ -264,7 +275,7 @@ eigenvalues, eigenvectors = np.linalg.eigh(cov_mat)
 # Normal is eigenvector with smallest eigenvalue
 normal = eigenvectors[:, 0]
 # Curvature metric (ratio of eigenvalues)
-curvature = eigenvalues[^0] / (np.sum(eigenvalues) + 1e-10)
+curvature = eigenvalues[0] / (np.sum(eigenvalues) + 1e-10)
 ```
 
 This approach is supported by research showing that binding sites typically exhibit high concavity compared to the rest of the protein surface[^2].
