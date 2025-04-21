@@ -1,3 +1,136 @@
+# Tutorial for Predicting binding sites
+
+## Requirements
+
+### External programs
+
+**IMPORTANT NOTE**: DSSP and MSMS need to be installed in order to get good prediction results.
+
+DSSP:
+```
+sudo apt install dssp
+mkdssp --version            #To test it
+```
+
+[MSMS](https://ccsb.scripps.edu/msms/downloads/): 
+
+- Unpack it 
+```
+tar -xvzf msms.tar.gz
+```
+
+- Move binary to somewhere on your PATH 
+```
+sudo mv msms /usr/local/bin/
+chmod +x /usr/local/bin/msms
+```
+**MAKE SURE THE NAME OF THE BINARY IS `msms`** (change name of binary if necessary)
+
+### Libraries
+- Core libraries:
+```
+numpy>=1.20.0
+
+pandas>=1.3.0
+
+scipy>=1.7.0
+```
+- Machine learning libraries:
+```
+scikit-learn>=0.24.0
+
+imbalanced-learn>=0.8.0
+
+joblib>=1.0.0
+```
+- Bioinformatics libraries:
+```
+biopython>=1.79
+
+DSSP>=3.0.0  # If using the standalone DSSP binary
+```
+- Visualization libraries:
+
+`scikit-image>=0.18.0`
+
+- Progress tracking:
+
+`tqdm>=4.61.0`
+
+- Other utilities:
+
+`multiprocessing>=0.70.12`
+
+**To install this labrires use:**
+
+``` pip install -r requirements.txt ```
+
+### Additional requirements
+
+Example of folder structure for ease of use (just for predicting binding sites, if you want to re-train the model see [Tutorial for training prediction model](#tutorial-for-training-prediction-model):
+
+```
+your_project/
+├── predict_pdbs/          # PDB files that will be predicted
+├── predictions_output/    # Auto-created: predictions for new inputs
+├── models/                # Trained models
+├── src/                   # Directory with the three main scripts (main, pcoket_detection and feature_extraction)
+```
+## Predict binding sites
+Run the following command (**Only one protein can be predicted at a time**):
+
+```
+python src/main.py predict --pdb_file predict_pdbs/new_protein.pdb --model_file models/name_of_model --output_dir predictions/ --log_file path/to/log_file.log (optional)
+```
+This will generate:
+
+- A `.csv` file with prediction for all residues
+
+- A `.csv` file with only the predicterd binding residues
+
+- An annotated PDB file (optionally used for PyMOL or Chimera visualization)
+
+## Test data
+
+In the repository the folder named `test/` contains 4 proteins that can be used for testing the model. Their predictions are already located in the `predictions/` folder if you just want to visualise the results.
+
+If you wish to test the model run the same command as before but instead of using the `predict_pdbs/` folder use the `test/` folder
+
+# Tutorial for training prediction model
+
+**Note**: Requirements are the same as in [Tutorial for Predicting Binding sites](#requirements) but the folder structure needs to be the following:
+
+```
+your_project/
+├── predict_pdbs/          # PDB files that will be predicted
+├── predictions_output/    # Auto-created: predictions for new inputs
+├── models/                # Trained models
+├── src/                   # Directory with the three main scripts (main, pcoket_detection and feature_extraction)
+├── train_data/            
+    ├── protein/           # Contains the PDB files used to train the model
+    ├── label/             # Contains CSVs with the class of each residue of each protein
+├── labeled_features/      # Auto-created: CSVs with the features of the train_data
+```
+
+## First step: Feature extraction
+
+This will extract geometric, structural adn physicochemical features for each protein and will label each residue.
+
+Run the following command:
+```
+python src/main.py --process --pdb_dir train_data/protein --prediction_dir train_data/label --output_dir labeled_features/ (optional) --log_file path/to/log_file.log (optional)
+```
+
+This step may take a long time depending on the ammount of PDB files that need to be processed.
+
+## Second step: Model training
+
+To train a Random Forest model run the following command:
+```
+python src/main.py train --features_file labeled_features/combined_labeled_features.csv --output_model models/name_of_model (optional) --nested_cv (optional) --log_file path/to/log_file.log (optional)
+```
+Note that by default the model will be saved in the current directory
+
 # Ligand Binding Site Prediction Program Documentation
 
 This detailed report provides a comprehensive analysis of the ligand binding site prediction program, including its structure, algorithmic workflow, and the theoretical principles that underpin its functionality. The program combines geometric approaches with machine learning techniques to identify potential binding sites on protein structures with high accuracy.
