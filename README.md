@@ -128,7 +128,6 @@ Tyr99 and Phe174: Create a hydrophobic "sandwich" around apixaban’s morpholino
 
 Trp215: Stabilizes the inhibitor via π-stacking with apixaban’s aryl group[^18].
 
-
 According to [Biolip](https://zhanggroup.org/BioLiP/pdb.cgi?pdb=2p16&chain=A&bs=BS02) the binding residues of 2p16 are:
 
 T98 E146 F174 A190 C191 Q192 S195 V213 W215 G216 C220
@@ -193,9 +192,11 @@ your_project/
 ├── labeled_features/      # Auto-created: CSVs with the features of the train_data
 ```
 
+**To use the same exact data that was used for training download the `holo4k.zip`, decompress it and put the `receptor/` and `predictor/` folders inside the `train_data/` directory**. This folders contain 4000 files each so they have a considerable size.
+
 ## First step: Feature extraction
 
-This will extract geometric, structural adn physicochemical features for each protein and will label each residue.
+This will extract geometric, structural and physicochemical features for each protein and will label each residue.
 
 Run the following command:
 ```
