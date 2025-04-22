@@ -126,9 +126,8 @@ Ala190 and Cys191: Contribute to the hydrophobic environment of the S1 pocket.
 
 Tyr99 and Phe174: Create a hydrophobic "sandwich" around apixaban’s morpholinone ring.
 
-Trp215: Stabilizes the inhibitor via π-stacking with apixaban’s aryl group.
+Trp215: Stabilizes the inhibitor via π-stacking with apixaban’s aryl group[^18].
 
-(https://www.nature.com/articles/s41467-024-48278-1)
 
 According to [Biolip](https://zhanggroup.org/BioLiP/pdb.cgi?pdb=2p16&chain=A&bs=BS02) the binding residues of 2p16 are:
 
@@ -150,7 +149,7 @@ BACE-1 is a membrane-bound aspartic protease that plays a crucial role in the pa
 
 The structure captures BACE-1 in complex with CNP520, a small-molecule inhibitor designed to block its enzymatic activity.
 
-The residues Asp32 and Asp228 form the catalytic dyad essential for BACE-1’s proteolytic activity. They coordinate a water molecule involved in substrate cleavage. (https://pmc.ncbi.nlm.nih.gov/articles/PMC4189502/)
+The residues Asp32 and Asp228 form the catalytic dyad essential for BACE-1’s proteolytic activity. They coordinate a water molecule involved in substrate cleavage[^19].
 
 Tyr71 and Tyr76 are located in the flap region and while the fromer participates in hydrogen bonding and stabilisation of the active site, the latter contributes to hydrophobic interactions.
 
@@ -165,9 +164,8 @@ The binding pocket of BACE-1 is divided into subsites:
 Other critical residues are:
 - Gln73: Participates in hydrogen bonding with ligands, affecting binding stability
 
-- Phe108 and Trp115: Form aromatic stacking interactions with planar groups in inhibitors
+- Phe108 and Trp115: Form aromatic stacking interactions with planar groups in inhibitors[^20]
 
-(https://www.nature.com/articles/s41598-024-75292-6)
 
 According to [BioLip](https://zhanggroup.org/BioLiP/pdb.cgi?pdb=6eqm&chain=A&bs=BS01), the binding residues in this complex are:
 
@@ -679,6 +677,14 @@ The modular design and comprehensive documentation make the program accessible f
 [^16]: https://academic.oup.com/bioinformatics/article/36/Supplement_2/i726/6055937
 
 [^17]: https://github.com/charles-abreu/GRaSP/tree/master/grasp-datasets/holo4k
+
+[^18]: https://www.nature.com/articles/s41467-024-48278-1
+
+[^19]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4189502/
+
+[^20]: https://www.nature.com/articles/s41598-024-75292-6
+
+
 
 
 
