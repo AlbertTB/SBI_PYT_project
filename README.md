@@ -538,12 +538,26 @@ if __name__ == "__main__":
     process_parser.add_argument("--pdb_dir", required=True, help="Directory containing PDB files")
 ```
 
+## Data collection
+
+The data used to train and evaluate the machine learning model were collected from the HOLO4K dataset, created by Radoslav Krivák and David Hoksza[^15]. For this project, we used the version of the dataset organized and made available by Charles Santana and Sabrina Silveira[^16][^17]
+
+## Considerations and limitations of the project
+
+While this program offers a robust and well-validated approach for ligand binding site prediction, there are several important considerations and limitations to keep in mind:
+
+- **Dataset-Specific Bias**: The model was trained exclusively on the HOLO4K dataset, which consists of protein structures with known ligands. As such, the predictive performance is optimized for proteins that are structurally similar to those found in this dataset. Users should expect reduced accuracy when applying the model to proteins with substantially different folds, domains, or binding site characteristics.
+- **Single Protein Predictions**: The current implementation is designed to predict binding sites for one protein at a time. Batch processing of multiple proteins is not supported in the current version, which may limit its scalability for high-throughput applications.
+- **Class Imbalance**: Despite the use of SMOTE for synthetic oversampling, binding site prediction remains inherently imbalanced due to the small number of binding residues compared to non-binding ones. This may affect precision-recall trade-offs in edge cases.
+- **Dependence on Structural Quality and Solvent Exposure**: As shown in the "Final Test Set Metrics.txt" document, the model relies heavily on spatially derived features like neighbor_count, relative solvent accessibility (rel_asa), and half-sphere exposure (hse_up), all of which assume accurate, static 3D representations of the protein. This introduces limitations when working with homology models, low-resolution structures, or proteins in flexible conformations, as minor deviations in residue positioning or packing can significantly alter exposure-based metrics. As a result, prediction accuracy may decrease for proteins lacking experimentally resolved, high-resolution structures.
+
 
 ## Conclusion
 
 This ligand binding site prediction program represents a sophisticated integration of structural bioinformatics, biochemistry, and machine learning principles. By combining geometric analysis of protein structures with extensive feature extraction and advanced machine learning techniques, the program achieves accurate prediction of potential binding sites.
 
 The modular design and comprehensive documentation make the program accessible for both research and practical applications in drug discovery and protein function analysis. The incorporation of established theoretical principles from structural bioinformatics and biochemistry, supported by relevant academic references, ensures the scientific validity of the prediction methodology.
+
 
 ## References
 
@@ -576,6 +590,16 @@ The modular design and comprehensive documentation make the program accessible f
 [^13]: https://pubmed.ncbi.nlm.nih.gov/29028926/
 
 [^14]: https://pubmed.ncbi.nlm.nih.gov/34322702/
+
+[^15]: https://jcheminf.biomedcentral.com/articles/10.1186/s13321-018-0285-8
+
+[^16]: https://academic.oup.com/bioinformatics/article/36/Supplement_2/i726/6055937
+
+[^17]: https://github.com/charles-abreu/GRaSP/tree/master/grasp-datasets/holo4k
+
+
+
+
 
 
 
