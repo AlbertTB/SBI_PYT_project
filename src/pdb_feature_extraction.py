@@ -20,7 +20,6 @@ except ImportError as e:
     raise
 
 
-# Amino acid properties remain the same
 # Hydrophobicity scale (Kyte & Doolittle)
 hydrophobicity = {
     'ALA': 1.8, 'ARG': -4.5, 'ASN': -3.5, 'ASP': -3.5, 'CYS': 2.5,
@@ -62,8 +61,9 @@ hbond_acceptor = {
 }
 
 def calculate_dssp(pdb_file, model):
-    """Calculate DSSP with caching for better performance"""
-            # Try using DSSP directly through Biopython
+    """Calculate DSSP using Biopython"""
+    
+    # Try using DSSP directly through Biopython
     dssp_data = DSSP(model, pdb_file)
     
     # Convert DSSP output to more convenient dict
@@ -76,7 +76,7 @@ def calculate_dssp(pdb_file, model):
     return dssp
     
 def calculate_residue_depth(model):
-    """Calculate residue depth using ResidueDepth while muting MSMS noise"""
+    """Calculate residue depth using ResidueDepth"""
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -88,7 +88,7 @@ def calculate_residue_depth(model):
 
 def extract_features(pdb_file, output_dir="features"):
     """
-    Extract features from a PDB file for ligand binding site prediction - optimized version
+    Extract features from a PDB file for ligand binding site prediction
     
     Parameters:
     -----------
@@ -115,7 +115,7 @@ def extract_features(pdb_file, output_dir="features"):
         print(f"Error parsing {pdb_file}: {e}")
         return pd.DataFrame()
     
-    # Get all atom coordinates for spatial calculations - do this only once
+    # Get all atom coordinates for spatial calculations
     all_atoms = []
     atom_residue_map = {}
     
@@ -148,7 +148,6 @@ def extract_features(pdb_file, output_dir="features"):
     dssp = calculate_dssp(pdb_file, model)
     
     # Calculate ResidueDepth efficiently
-    
     rd = calculate_residue_depth(model)
     
     # Calculate HSE (half-sphere exposure)
@@ -201,13 +200,13 @@ def extract_features(pdb_file, output_dir="features"):
             # DSSP provides: secondary structure, relative ASA, phi, psi angles, etc.
             dssp_data = dssp[dssp_key]
             
-            # Corrected index: Secondary structure (index 2 instead of 1)
+            # Corrected index: Secondary structure type
             res_features['ss_type'] = dssp_data[2]
             
-            # Relative ASA (index 3)
+            # Relative ASA
             res_features['rel_asa'] = float(dssp_data[3])
             
-            # Phi and Psi angles (indices 4 and 5)
+            # Phi and Psi angles
             res_features['phi'] = float(dssp_data[4])
             res_features['psi'] = float(dssp_data[5])
         else:
@@ -217,10 +216,9 @@ def extract_features(pdb_file, output_dir="features"):
             res_features['phi'] = 0.0
             res_features['psi'] = 0.0
         
-        # 3. HSE (Half-sphere exposure) - Corrected to use residue directly
+        # 3. HSE (Half-sphere exposure)
         if hse:
             try:
-                # Use the residue directly instead of key lookup
                 hse_up = residue.xtra.get('EXP_HSE_B_U', None)
                 hse_down = residue.xtra.get('EXP_HSE_B_D', None)
 
@@ -297,7 +295,6 @@ def extract_features(pdb_file, output_dir="features"):
         res_features['atom_density'] = atom_count / (4.0/3.0 * np.pi * 8.0**3)
         
         # 8. Convert secondary structure to numerical features using one-hot encoding
-        # Optimize one-hot encoding
         ss = res_features['ss_type']
         for ss_type in ss_types:
             if ss_type == "-":

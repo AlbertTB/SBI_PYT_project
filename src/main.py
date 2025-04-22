@@ -12,7 +12,7 @@ try:
     import multiprocessing as mp
     import logging
     from sklearn.ensemble import RandomForestClassifier
-    from sklearn.model_selection import cross_val_score, RandomizedSearchCV, StratifiedGroupKFold, GroupShuffleSplit
+    from sklearn.model_selection import cross_val_score, StratifiedGroupKFold, GroupShuffleSplit
     from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, precision_score, recall_score, f1_score
     from pdb_feature_extraction import process_directory, label_binding_sites, extract_features
     from imblearn.pipeline import Pipeline as ImbPipeline
@@ -466,7 +466,7 @@ def train_optimized_model(features_file, output_model="binding_site_model.pkl", 
         for metric, value in avg_metrics.items():
             logger.info(f"Average {metric}: {value:.4f}")
         
-        # Now train the final model on the entire training set
+        # Train the final model on the entire training set
         logger.info("\nTraining final model on entire training set...")
         pipeline.fit(X_train_outer, y_train_outer)
         
