@@ -90,11 +90,94 @@ This will generate:
 
 - An annotated PDB file (optionally used for PyMOL or Chimera visualization)
 
+### Visualization
+
+In order to visualise the predicted binding sites open the newly created _visualization.pdb file in either Chimera or Pymol
+
+- In Chimera: load the file, then use Tools > Depiction > Render by Attribute and select B-factor
+- In PyMol: load the file and use 'spectrum b, blue_white_red, minimum=0, maximum=100'
+
 ## Test data
 
 In the repository the folder named `test/` contains 4 proteins that can be used for testing the model. Their predictions are already located in the `predictions/` folder if you just want to visualise the results.
 
 If you wish to test the model run the same command as before but instead of using the `predict_pdbs/` folder use the `test/` folder
+
+### Analysis of examples
+
+#### [2p16](https://www.rcsb.org/structure/2P16) - Factor Xa in Complex with the Inhibitor APIXABAN
+Factor Xa is a serine protease enzyme central to blood coagulation, playing a pivotal role in the final common pathway of the clotting cascade.
+
+The crystal structure 2P16 captures human coagulation Factor Xa (FXa) in complex with the direct oral anticoagulant apixaban. Apixaban binds to FXa’s active site, primarily interacting with residues in the S1 and S4 subsites, which are critical for substrate recognition and inhibitor specificity. 
+
+- S1 Subsite (Primary Specificity Pocket)
+
+Asp189: Forms a salt bridge with apixaban’s pyrazole N-2 nitrogen, anchoring the inhibitor in the S1 pocket.
+
+Tyr228: Engages in hydrophobic interactions with apixaban’s chlorothiophene group.
+
+Gly216: Backbone carbonyl oxygen forms a hydrogen bond with apixaban’s carboxamide group.
+
+Gln192: Backbone interaction stabilizes apixaban’s pyrazole ring.
+
+Ala190 and Cys191: Contribute to the hydrophobic environment of the S1 pocket.
+
+- S4 Subsite (Aryl-Binding Pocket)
+
+Tyr99 and Phe174: Create a hydrophobic "sandwich" around apixaban’s morpholinone ring.
+
+Trp215: Stabilizes the inhibitor via π-stacking with apixaban’s aryl group.
+
+(https://www.nature.com/articles/s41467-024-48278-1)
+
+According to [Biolip](https://zhanggroup.org/BioLiP/pdb.cgi?pdb=2p16&chain=A&bs=BS02) the binding residues of 2p16 are:
+
+T98 E146 F174 A190 C191 Q192 S195 V213 W215 G216 C220
+
+And our model predicted the following binding residues:
+
+C27 H57 L123 D189 A190 C191 S195 W215 E217 C220
+
+Important S1 subsite residues in the Factor Xa–apixaban complex, such as Asp189, Ala190, Cys191, Ser195, Trp215, and Cys220, are precisely captured by our model and are necessary for inhibitor anchoring and stabilization. The S4 subsite is partially covered, as seen by the presence of Trp215.
+
+It does not, however, include residues that are essential for hydrophobic interactions and hydrogen bonding in the S1 and S4 pockets, such as Gly216, Gln192, Phe174, Tyr99, and Tyr229. Furthermore, the model predicts a number of residues that are not mentioned in the crystal structure; these residues could be erroneous or peripheral predictions.
+
+Though it might be enhanced by capturing more of the S4 subsite and honing non-canonical predictions, the model does a good job overall at finding fundamental binding interactions.
+
+#### [6eqm](https://www.rcsb.org/structure/6EQM) - Crystal Structure of Human BACE-1 in Complex with CNP520
+
+BACE-1 is a membrane-bound aspartic protease that plays a crucial role in the pathogenesis of Alzheimer’s disease by initiating the cleavage of amyloid precursor protein (APP), leading to the production of amyloid-β (Aβ) peptides.
+
+The structure captures BACE-1 in complex with CNP520, a small-molecule inhibitor designed to block its enzymatic activity.
+
+The residues Asp32 and Asp228 form the catalytic dyad essential for BACE-1’s proteolytic activity. They coordinate a water molecule involved in substrate cleavage. (https://pmc.ncbi.nlm.nih.gov/articles/PMC4189502/)
+
+Tyr71 and Tyr76 are located in the flap region and while the fromer participates in hydrogen bonding and stabilisation of the active site, the latter contributes to hydrophobic interactions.
+
+The binding pocket of BACE-1 is divided into subsites:
+
+- S1/S3 subsites: Val69, Leu30 and Ile110 form hydrophobic interactions with ligand side chains.
+
+- S2 subsite: Arg128 and Ser35 engage in hydrogen bonding and polar interactions with inhibitors.
+
+- S2' subsite: Tyr198 and Ser36 stabilize ligand positioning through van der Waals and hydrogen-bonding interactions.
+
+Other critical residues are:
+- Gln73: Participates in hydrogen bonding with ligands, affecting binding stability
+
+- Phe108 and Trp115: Form aromatic stacking interactions with planar groups in inhibitors
+
+(https://www.nature.com/articles/s41598-024-75292-6)
+
+According to [BioLip](https://zhanggroup.org/BioLiP/pdb.cgi?pdb=6eqm&chain=A&bs=BS01), the binding residues in this complex are:
+
+G11 Q12 G13 Y14 L30 D32 Y71 F108 I110 I118 D228 G230 T231 T232
+
+And our model predicted the following binding residues:
+
+G11 G13 D32 G34 N98 W115 I118 G156 D228 S229 G230 E339
+
+Our model correctly predicts key residues like Asp32 and Asp228 (catalytic dyad) and Ile118 (hydrophobic interaction). However, it misses critical residues like Tyr71, Tyr76, Ser35, Arg128, and Tyr198, which are involved in stabilizing the active site and ligand positioning.
 
 # Tutorial for training prediction model
 
@@ -359,7 +442,7 @@ The program generates:
 - CSV files containing detailed prediction results
 
 
-## Theoretical Foundations
+# Theoretical Foundations
 
 ### Structural Bioinformatics Principles
 
@@ -540,7 +623,7 @@ if __name__ == "__main__":
 
 ## Data collection
 
-The data used to train and evaluate the machine learning model were collected from the HOLO4K dataset, created by Radoslav Krivák and David Hoksza[^15]. For this project, we used the version of the dataset organized and made available by Charles Santana and Sabrina Silveira[^16][^17]
+The data used to train and evaluate the machine learning model were collected from the HOLO4K dataset (4000 proteins randomly selected were used out of a total of 4350 proteins), created by Radoslav Krivák and David Hoksza[^15]. For this project, we used the version of the dataset organized and made available by Charles Santana and Sabrina Silveira[^16][^17]
 
 ## Considerations and limitations of the project
 

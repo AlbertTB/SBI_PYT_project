@@ -609,6 +609,8 @@ def run_prediction_pipeline(pdb_file, model_file="binding_site_model.pkl", outpu
         DataFrame containing predicted binding sites
     """
 
+    logger.info(f"Running prediction pipeline on {pdb_file}...")
+
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
