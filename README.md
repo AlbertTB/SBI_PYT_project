@@ -482,7 +482,7 @@ feature_importances = pd.DataFrame({
 }).sort_values(by='Importance', ascending=False)
 ```
 
-This analysis helps understand the biochemical and structural determinants of ligand binding, aligning with findings from studies on protein-ligand binding affinity prediction via deep learning models.
+This analysis helps understand the biochemical and structural determinants of ligand binding, aligning with findings from studies on protein-ligand binding affinity prediction via deep learning models. The results are availiable in the document "Final Test Set Metrics.txt".
 
 #### Handling Class Imbalance with SMOTE
 
