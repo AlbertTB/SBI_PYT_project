@@ -4,6 +4,8 @@
 
 ### External programs
 
+To properly clone the repository you should install git lfs by running `git lfs install`
+
 **IMPORTANT NOTE**: DSSP and MSMS need to be installed in order to get good prediction results.
 
 DSSP:
